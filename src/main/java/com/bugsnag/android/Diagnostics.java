@@ -25,19 +25,23 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 
-import com.bugsnag.Configuration;
-import com.bugsnag.utils.JSONUtils;
+import com.bugsnag.android.utils.JSONUtils;
 import com.bugsnag.android.utils.Async;
 
-class Diagnostics extends com.bugsnag.Diagnostics {
+class Diagnostics {
     private static final String PREFS_NAME = "Bugsnag";
     private static Long startTime;
     private static String uuid;
     private Context applicationContext;
     private String packageName;
+    private Configuration config;
+    private JSONObject deviceData = new JSONObject();
+    private JSONObject appData = new JSONObject();
 
     public Diagnostics(Configuration config, Context context, Client client) {
-        super(config);
+        this.config = config;
+
+        JSONUtils.safePutOpt(deviceData, "osName", System.getProperty("os.name"));
 
         applicationContext = context;
 
@@ -56,7 +60,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
     }
 
     public JSONObject getAppState() {
-        JSONObject appState = super.getAppState();
+        JSONObject appState = new JSONObject();
 
         JSONUtils.safePutOpt(appState, "duration", SystemClock.elapsedRealtime() - startTime);
         JSONUtils.safePutOpt(appState, "durationInForeground", ActivityStack.sessionLength());
@@ -73,7 +77,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
     }
 
     public JSONObject getDeviceState() {
-        JSONObject deviceState = super.getDeviceState();
+        JSONObject deviceState = new JSONObject();
 
         JSONUtils.safePutOpt(deviceState, "freeMemory", totalFreeMemory());
         JSONUtils.safePutOpt(deviceState, "orientation", getOrientation());
@@ -86,9 +90,15 @@ class Diagnostics extends com.bugsnag.Diagnostics {
         return deviceState;
     }
 
-    public JSONObject getDeviceData() {
-        super.getDeviceData();
+    public JSONObject getAppData() {
+        JSONUtils.safePutOpt(appData, "version", config.appVersion.get());
+        JSONUtils.safePutOpt(appData, "releaseStage", config.releaseStage.get());
 
+        return appData;
+    }
+
+    public JSONObject getDeviceData() {
+        JSONUtils.safePutOpt(deviceData, "osVersion", config.osVersion.get());
         JSONUtils.safePutOpt(deviceData, "id", getUUID());
 
         return deviceData;
@@ -99,13 +109,11 @@ class Diagnostics extends com.bugsnag.Diagnostics {
     }
 
     public JSONObject getUser() {
-        JSONObject user = super.getUser();
-
-        if(user.optString("id").equals("")) {
-            JSONUtils.safePut(user, "id", getUUID());
+        if(config.user.optString("id").equals("")) {
+            JSONUtils.safePut(config.user, "id", getUUID());
         }
 
-        return user;
+        return config.user;
     }
 
     //
@@ -158,7 +166,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
 
             diskSpace = Math.min(internalBytesAvailable, externalBytesAvailable);
         } catch (Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return diskSpace;
@@ -174,7 +182,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
             isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                          status == BatteryManager.BATTERY_STATUS_FULL;
         } catch (Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return isCharging;
@@ -191,7 +199,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
 
             chargeLevel = level / (float)scale;
         } catch (Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return chargeLevel;
@@ -210,7 +218,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
                     break;
             }
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return orientation;
@@ -221,7 +229,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
         try {
             appName = applicationContext.getPackageManager().getApplicationInfo(packageName, 0).name;
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
         return appName;
     }
@@ -233,7 +241,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
             DisplayMetrics metrics = applicationContext.getResources().getDisplayMetrics();
             resolution = String.format("%dx%d", Math.max(metrics.widthPixels, metrics.heightPixels), Math.min(metrics.widthPixels, metrics.heightPixels));
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return resolution;
@@ -246,7 +254,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
             PackageInfo pi = applicationContext.getPackageManager().getPackageInfo(packageName, 0);
             versionCode = pi.versionCode;
         } catch(Exception e) {
-            config.logger.warn("Could not get package versionCode", e);
+            Logger.warn("Could not get package versionCode", e);
         }
 
         return versionCode;
@@ -259,7 +267,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
             PackageInfo pi = applicationContext.getPackageManager().getPackageInfo(packageName, 0);
             packageVersion = pi.versionName;
         } catch(Exception e) {
-            config.logger.warn("Could not get package versionName", e);
+            Logger.warn("Could not get package versionName", e);
         }
 
         return packageVersion;
@@ -275,7 +283,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
                 releaseStage = "development";
             }
         } catch(Exception e) {
-            config.logger.warn("Could not guess release stage", e);
+            Logger.warn("Could not guess release stage", e);
         }
 
         return releaseStage;
@@ -316,7 +324,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
                 totalMemory = Runtime.getRuntime().totalMemory();
             }
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return totalMemory;
@@ -329,7 +337,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
         try {
             freeMemory = totalMemoryAvailable() - memoryUsedByApp();
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return freeMemory;
@@ -343,7 +351,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
         try {
             memoryUsedByApp = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return memoryUsedByApp;
@@ -358,7 +366,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
 
             lowMemory = memInfo.lowMemory;
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
         return lowMemory;
     }
@@ -405,7 +413,7 @@ class Diagnostics extends com.bugsnag.Diagnostics {
                 networkStatus = "none";
             }
         } catch(Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return networkStatus;
@@ -423,9 +431,19 @@ class Diagnostics extends com.bugsnag.Diagnostics {
                 gpsAllowed = "disallowed";
             }
         } catch (Exception e) {
-            config.logger.warn(e);
+            Logger.warn(e);
         }
 
         return gpsAllowed;
+    }
+
+    public JSONObject getMetrics() {
+        JSONObject metrics = new JSONObject();
+
+        JSONUtils.safePutOpt(metrics, "user", getUser());
+        JSONUtils.safePutOpt(metrics, "app", getAppData());
+        JSONUtils.safePutOpt(metrics, "device", getDeviceData());
+
+        return metrics;
     }
 }

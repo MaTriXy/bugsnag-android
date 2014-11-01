@@ -4,8 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.util.Log;
 
-import com.bugsnag.MetaData;
-
 public class Bugsnag {
     private static Client client;
     private static final String TAG = "Bugsnag";
@@ -45,18 +43,6 @@ public class Bugsnag {
             @Override
             public void run() {
                 client.setContext(context);
-            }
-        });
-    }
-
-    /**
-    * @deprecated  Replaced by {@link #setUser()}
-    */
-    public static void setUserId(final String userId) {
-        runOnClient(new Runnable() {
-            @Override
-            public void run() {
-                client.setUserId(userId);
             }
         });
     }

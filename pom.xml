@@ -46,12 +46,6 @@
     </dependency>
 
     <dependency>
-      <groupId>com.bugsnag</groupId>
-      <artifactId>bugsnag</artifactId>
-      <version>[1.2.8,2)</version>
-    </dependency>
-
-    <dependency>
       <groupId>org.json</groupId>
       <artifactId>json</artifactId>
       <version>20090211</version>
@@ -129,26 +123,6 @@
         </executions>
         <configuration>
           <proguardInclude>${basedir}/proguard.cfg</proguardInclude>
-        </configuration>
-      </plugin>
-
-      <!-- Create additional jar with bugsnag-java included -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-assembly-plugin</artifactId>
-        <version>2.2.1</version>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>attached</goal>
-            </goals>
-          </execution>
-        </executions>
-        <configuration>
-          <descriptorRefs>
-            <descriptorRef>jar-with-dependencies</descriptorRef>
-          </descriptorRefs>
         </configuration>
       </plugin>
     </plugins>
