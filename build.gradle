@@ -1,0 +1,56 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.0.0'
+        classpath 'com.jakewharton.sdkmanager:gradle-plugin:0.12.0'
+    }
+}
+
+// Tasks to build and test the android library
+apply plugin: 'android-sdk-manager'
+apply plugin: 'com.android.library'
+android {
+    compileSdkVersion Integer.parseInt(project.ANDROID_BUILD_SDK_VERSION)
+    buildToolsVersion project.ANDROID_BUILD_TOOLS_VERSION
+
+    defaultConfig {
+        minSdkVersion 4
+        targetSdkVersion Integer.parseInt(project.ANDROID_BUILD_TARGET_SDK_VERSION)
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFile 'proguard.txt'
+        }
+    }
+
+    lintOptions {
+        disable 'DefaultLocale'
+    }
+}
+
+// Task to generate a .jar file
+task jarRelease(type: Copy) {
+    def jarFile = POM_ARTIFACT_ID + '-' + VERSION_NAME + '.jar'
+
+    from 'build/intermediates/bundles/release/'
+    into 'build/outputs/jar'
+    include 'classes.jar'
+    rename('classes.jar', jarFile)
+
+    artifacts.add('archives', file('build/outputs/jar/' + jarFile));
+}
+
+// Generate .jar files when assembling release builds
+tasks.whenTaskAdded { task ->
+    if (task.name == 'signArchives') {
+        task.dependsOn jarRelease
+    }
+}
+
+// Tasks to release the library to maven central
+apply from: 'https://raw.github.com/chrisbanes/gradle-mvn-push/master/gradle-mvn-push.gradle'
