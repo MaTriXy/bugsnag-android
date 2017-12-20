@@ -7,39 +7,38 @@ Contributing
 -   [Make a pull request](https://help.github.com/articles/using-pull-requests)
 -   Thanks!
 
-Running `./gradlew` installs both the gradle build system and the Android SDK,
-but you'll need to make sure that the `adb` tool installed as part of the
-Android SDK is available in your `$PATH` before building, eg:
 
+Installing the Android SDK
+--------------------------
+
+Running `./gradlew` can automatically install both the Gradle build system
+and the Android SDK.
+
+If you already have the Android SDK installed, make sure to export the
+`ANDROID_HOME` environment variable, for example:
+
+```shell
+export ANDROID_HOME=/usr/local/Cellar/android-sdk/23.0.2
 ```
-export PATH=$PATH:~/.android-sdk/platform-tools
-```
+
+If you don't already have the Android SDK installed, it will be automatically
+installed to `~/.android-sdk`.
+
+> Note: You'll need to make sure that the `adb`, `android` and `emulator` tools
+> installed as part of the Android SDK are available in your `$PATH` before
+> building.
 
 
-Building the Libarary
+Building the Library
 ---------------------
 
-You can build new `.jar` and `.aar` files as follows:
+You can build new `.aar` files as follows:
 
 ```shell
 ./gradlew clean :build
 ```
 
-Jar files are generated into `build/outputs/jar` and Aar files are generated into
-`build/outputs/aar`.
-
-
-Building the Example App
-------------------------
-
-You can build and install the example app to as follows:
-
-```shell
-./gradlew clean example:installDebug
-```
-
-This builds the latest version of the library and installs an app onto your
-device/emulator.
+Files are generated into`build/outputs/aar`.
 
 
 Running Tests
@@ -53,52 +52,77 @@ You can run the test suite on a device/emulator as follows:
 ./gradlew clean :connectedCheck
 ```
 
+Running Lint
+------------
+You can run lint on the project using the following command:
+
+```shell
+./gradlew lint
+```
+
+Building the Example App
+------------------------
+
+You can build and install the example app to as follows:
+
+```shell
+./gradlew clean example:installJavaExampleDebug
+```
+
+This builds the latest version of the library and installs an app onto your
+device/emulator.
+
 
 Releasing a New Version
 -----------------------
 
+## Release Checklist
+Please follow the testing instructions in [the platforms release checklist](https://github.com/bugsnag/platforms-release-checklist/blob/master/README.md), and any additional steps directly below.
+
+### Instructions
+
 If you are a project maintainer, you can build and release a new version of
 `bugsnag-android` as follows:
 
-### 1. Prepare for release
+### 1. Ensure you have permission to make a release
 
+This process is a little ridiculous...
+
+-   Create a [Sonatype JIRA](https://issues.sonatype.org) account
+-   Ask in the [Bugsnag Sonatype JIRA ticket](https://issues.sonatype.org/browse/OSSRH-5533) to become a contributor
+-   Ask an existing contributor (likely Simon) to confirm in the ticket
+-   Wait for Sonatype them to confirm the approval
+
+
+### 2. Prepare for release
+
+-   Test unhandled and handled exception reporting via the example application,
+    ensuring both kinds of reports are sent.
 -   Update the `CHANGELOG` and `README.md` with any new features
 
--   Update the version numbers in `gradle.properties` and `src/main/java/com/bugsnag/android/Notifier.java`
-
--   Commit and tag the release
-
-    ```shell
-    git commit -am "v3.x.x"
-    git tag v3.x.x
-    git push origin master && git push --tags
-    ```
-
-### 2. Release to Maven Central
+### 3. Release to Maven Central
 
 -   Create a file `~/.gradle/gradle.properties` with the following contents:
 
     ```ini
     # Your credentials for https://oss.sonatype.org/
+    # NOTE: An equals sign (`=`) in any of these fields will break the parser
     NEXUS_USERNAME=your-nexus-username
     NEXUS_PASSWORD=your-nexus-password
 
     # GPG key details
     signing.keyId=your-gpg-key-id # From gpg --list-keys
     signing.password=your-gpg-key-passphrase
-    signing.secretKeyRingFile=/Users/james/.gnupg/secring.gpg
+    signing.secretKeyRingFile=/Users/{username}/.gnupg/secring.gpg
     ```
 
 -   Build and upload the new version
 
-    ```shell
-    ./gradlew clean :uploadArchives
-    ```
+-   Update the version number, tag a release, and upload an archive by running `make VERSION=[number] release`
 
 -   "Promote" the release build on Maven Central
 
     -   Go to the [sonatype open source dashboard](https://oss.sonatype.org/index.html#stagingRepositories)
-    -   Click “Staging Repositories”
     -   Click the search box at the top right, and type “com.bugsnag”
     -   Select the com.bugsnag staging repository
     -   Click the “close” button in the toolbar, no message
@@ -106,7 +130,22 @@ If you are a project maintainer, you can build and release a new version of
     -   Select the com.bugsnag closed repository
     -   Click the “release” button in the toolbar
 
-### 3. Upload the .jar file to GitHub
+### 4. Upload the .aar file to GitHub
 
 -   Create a "release" from your new tag on [GitHub Releases](https://github.com/bugsnag/bugsnag-android/releases)
--   Upload the generated `.jar` file from `build/outputs/jar/bugsnag-android-x.y.z.jar` on the "edit tag" page for this release tag
+-   Upload the generated `.aar` file from `build/outputs/aar/bugsnag-android-release.aar` on the "edit tag" page for this release tag
+
+### 5. Update documentation
+
+-    Update installation instructions in the quickstart
+     guides on the website with any new content (in `_android.slim`)
+-    Bump the version number in the installation instructions on
+     docs.bugsnag.com/platforms/android, and add any new content
+
+### 6. Keep dependent libraries in sync
+
+-    Make releases to downstream libraries, if appropriate (generally for bug
+     fixes)
+     
+### 7. Update Method Count Badge
+-   Update the version number specified in the URL for the method count badge in the README. 

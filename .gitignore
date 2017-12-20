@@ -27,3 +27,10 @@ proguard/
 
 # Log Files
 *.log
+
+# Android Studio #
+.idea
+*.iml
+
+# Javadoc
+docs/
