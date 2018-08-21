@@ -1,5 +1,141 @@
 # Changelog
 
+## 4.X.X (TBD)
+
+### Bug fixes
+
+* Catch Exception within DefaultDelivery class [#361](https://github.com/bugsnag/bugsnag-android/pull/361)
+
+## 4.6.0 (2018-08-02)
+
+* Android P compatibility fixes - ensure available information on StrictMode violations is collected [#350](https://github.com/bugsnag/bugsnag-android/pull/350)
+
+* Disable BuildConfig generation [#343](https://github.com/bugsnag/bugsnag-android/pull/343)
+
+* Add consumer proguard rules for automatic ProGuard configuration without the Bugsnag gradle plugin [#345](https://github.com/bugsnag/bugsnag-android/pull/345)
+
+* Internal refactor of app/device data serialisation
+
+## 4.5.0 (2018-06-18)
+
+This release alters the behaviour of the notifier to track sessions automatically. 
+A session will be automatically captured on each app launch and sent to [https://sessions.bugsnag.com](https://sessions.bugsnag.com). If you
+use Bugsnag On-Premise, it is now also recommended that you set your notify and session endpoints
+via `config.setEndpoints(String notify, String sessions)`.
+
+* Enable automatic session tracking by default [#314](https://github.com/bugsnag/bugsnag-android/pull/314)
+
+### Bug fixes
+
+* Trim long stacktraces to max limit of 200 [#324](https://github.com/bugsnag/bugsnag-android/pull/324)
+
+## 4.4.1 (2018-05-30)
+
+### Bug fixes
+
+* Refine automatically collected breadcrumbs to a commonly useful set by default
+[#321](https://github.com/bugsnag/bugsnag-android/pull/321)
+
+* Ensure that unhandled error reports are always sent immediately on launch for Android P and in situations with no connectivity.
+[#319](https://github.com/bugsnag/bugsnag-android/pull/319)
+
+## 4.4.0 (2018-05-17)
+
+### Features
+
+Deprecation notice:
+
+SessionTrackingApiClient and ErrorApiClient are now deprecated in favour of the Delivery interface.
+If you configure a custom HTTP client with Bugsnag, it is recommended that you migrate over to this new API.
+Further information is available [in the configuration option reference.](https://docs.bugsnag.com/platforms/android/sdk/configuration-options/#setdelivery)
+and [class documentation for `Delivery`](https://bugsnag.github.io/bugsnag-android/com/bugsnag/android/Delivery.html)
+
+* Expose Delivery API interface for configuring custom HTTP clients
+[#299](https://github.com/bugsnag/bugsnag-android/pull/299)
+
+### Enhancements
+
+* Use buffered streams for IO (perf improvement)
+[#307](https://github.com/bugsnag/bugsnag-android/pull/307)
+
+## 4.3.4 (2018-05-02)
+
+### Bug fixes
+
+* Avoid adding extra comma separator in JSON if File input is empty or null
+[#284](https://github.com/bugsnag/bugsnag-android/pull/284)
+
+* Thread safety fixes to JSON file serialisation
+[#295](https://github.com/bugsnag/bugsnag-android/pull/295)
+
+* Prevent potential automatic activity lifecycle breadcrumb crash
+[#300](https://github.com/bugsnag/bugsnag-android/pull/300)
+
+* Fix serialisation issue with leading to incorrect dashboard display of breadcrumbs
+[#306](https://github.com/bugsnag/bugsnag-android/pull/306)
+
+## 4.3.3 (2018-04-04)
+
+### Bug fixes
+
+* Prevent duplicate reports being delivered in low connectivity situations
+  [#270](https://github.com/bugsnag/bugsnag-android/pull/270)
+* Fix possible NPE when reading default metadata filters
+  [#263](https://github.com/bugsnag/bugsnag-android/pull/263)
+
+## 4.3.2 (2018-03-09)
+
+### Bug fixes
+
+* Prevent ConcurrentModificationException in Before notify/breadcrumb callbacks [#266](https://github.com/bugsnag/bugsnag-android/pull/266)
+* Ensure that exception message is never null [#256](https://github.com/bugsnag/bugsnag-android/pull/256)
+* Add payload version to JSON body [#244](https://github.com/bugsnag/bugsnag-android/pull/244)
+* Update context tracking to use lifecycle callbacks rather than ActivityManager [#238](https://github.com/bugsnag/bugsnag-android/pull/238)
+
+### Enhancements
+
+* Detect whether running on emulator [#245](https://github.com/bugsnag/bugsnag-android/pull/245)
+* Add a callback for filtering breadcrumbs [#237](https://github.com/bugsnag/bugsnag-android/pull/237)
+
+
+## 4.3.1 (2018-01-26)
+
+### Bug fixes
+
+* Fix possible ANR when enabling session tracking via
+  `Bugsnag.setAutoCaptureSessions()` and connecting to latent networks.
+  [#231](https://github.com/bugsnag/bugsnag-android/pull/231)
+
+* Fix invalid payloads being sent when processing multiple Bugsnag events in the
+  same millisecond
+  [#235](https://github.com/bugsnag/bugsnag-android/pull/235)
+
+* Re-add API key to error report HTTP request body to preserve backwards
+  compatibility with older versions of the error reporting API
+  [#228](https://github.com/bugsnag/bugsnag-android/pull/228)
+
+## 4.3.0 (2018-01-18)
+
+- Move capture of thread stacktraces to start of notify process
+- Add configuration option to disable automatic breadcrumb capture
+- Update Gradle Wrapper
+- Parse manifest meta-data for Session Auto-Capture boolean flag
+
+## 4.2.2 (2018-01-09)
+
+### Bug fixes
+
+- Fix possible crash during session tracking initialization
+  [#220](https://github.com/bugsnag/bugsnag-android/pull/220)
+  [James Smith](https://github.com/loopj)
+
+## 4.2.1 (2018-01-09)
+- Misc Session Tracking fixes and enhancements
+
+## 4.2.0 (2018-01-05)
+- Adds support for tracking sessions and overall crash rate by setting `config.setAutoCaptureSessions` to `true`.
+In addition, sessions can be indicated manually using `Bugsnag.startSession` [#217](https://github.com/bugsnag/bugsnag-android/pull/217)
+
 ## 4.1.5 (2017-12-14)
 - Automatically capture breadcrumbs for new API 26 Intents
 - Increase max breadcrumb limit

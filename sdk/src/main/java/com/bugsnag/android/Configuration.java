@@ -3,28 +3,36 @@ package com.bugsnag.android;
 import android.content.Context;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.text.TextUtils;
 
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.LinkedHashSet;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Observable;
 import java.util.Observer;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * User-specified configuration storage object, contains information
  * specified at the client level, api-key and endpoint configuration.
  */
 public class Configuration extends Observable implements Observer {
-    static final String DEFAULT_ENDPOINT = "https://notify.bugsnag.com";
+
+    private static final String HEADER_API_PAYLOAD_VERSION = "Bugsnag-Payload-Version";
+    private static final String HEADER_API_KEY = "Bugsnag-Api-Key";
+    private static final String HEADER_BUGSNAG_SENT_AT = "Bugsnag-Sent-At";
 
     @NonNull
     private final String apiKey;
-    private String buildUUID;
+    private String buildUuid;
     private String appVersion;
     private String context;
-    private String endpoint = DEFAULT_ENDPOINT;
-    private String[] filters = new String[]{"password"};
+    private volatile String endpoint = "https://notify.bugsnag.com";
+    private volatile String sessionEndpoint = "https://sessions.bugsnag.com";
+
     private String[] ignoreClasses;
     @Nullable
     private String[] notifyReleaseStages = null;
@@ -34,12 +42,21 @@ public class Configuration extends Observable implements Observer {
     private boolean enableExceptionHandler = true;
     private boolean persistUserBetweenSessions = false;
     private long launchCrashThresholdMs = 5 * 1000;
+    private boolean autoCaptureSessions = true;
+    private boolean automaticallyCollectBreadcrumbs = true;
 
     @NonNull
     String defaultExceptionType = "android";
 
-    @NonNull private MetaData metaData;
-    private final Collection<BeforeNotify> beforeNotifyTasks = new LinkedHashSet<>();
+    @NonNull
+    private MetaData metaData;
+    private final Collection<BeforeNotify> beforeNotifyTasks = new ConcurrentLinkedQueue<>();
+    private final Collection<BeforeRecordBreadcrumb> beforeRecordBreadcrumbTasks
+        = new ConcurrentLinkedQueue<>();
+    private String codeBundleId;
+    private String notifierType;
+
+    private Delivery delivery;
 
     /**
      * Construct a new Bugsnag configuration object
@@ -119,9 +136,69 @@ public class Configuration extends Observable implements Observer {
      * endpoint.
      *
      * @param endpoint the custom endpoint to send report to
+     * @deprecated use {@link com.bugsnag.android.Configuration#setEndpoints(String, String)}
      */
+    @Deprecated
     public void setEndpoint(String endpoint) {
         this.endpoint = endpoint;
+    }
+
+    /**
+     * Set the endpoints to send data to. By default we'll send error reports to
+     * https://notify.bugsnag.com, and sessions to https://sessions.bugsnag.com, but you can
+     * override this if you are using Bugsnag Enterprise to point to your own Bugsnag endpoint.
+     *
+     * Please note that it is recommended that you set both endpoints. If the notify endpoint is
+     * missing, an exception will be thrown. If the session endpoint is missing, a warning will be
+     * logged and sessions will not be sent automatically.
+     *
+     * @param notify the notify endpoint
+     * @param sessions the sessions endpoint
+     *
+     * @throws IllegalArgumentException if the notify endpoint is empty or null
+     */
+    public void setEndpoints(@NonNull String notify, @NonNull String sessions)
+        throws IllegalArgumentException {
+
+        if (TextUtils.isEmpty(notify)) {
+            throw new IllegalArgumentException("Notify endpoint cannot be empty or null.");
+        } else {
+            this.endpoint = notify;
+        }
+
+        boolean invalidSessionsEndpoint = TextUtils.isEmpty(sessions);
+
+        if (invalidSessionsEndpoint) {
+            Logger.warn("The session tracking endpoint has not been set. "
+                + "Session tracking is disabled");
+            this.sessionEndpoint = null;
+            this.autoCaptureSessions = false;
+        } else {
+            this.sessionEndpoint = sessions;
+        }
+    }
+
+    /**
+     * Gets the Session Tracking API endpoint
+     *
+     * @return the endpoint
+     */
+    public String getSessionEndpoint() {
+        return sessionEndpoint;
+    }
+
+    /**
+     * Set the endpoint to send Session Tracking data to. By default we'll send reports to
+     * the standard https://sessions.bugsnag.com endpoint, but you can override
+     * this if you are using Bugsnag Enterprise to point to your own Bugsnag
+     * endpoint.
+     *
+     * @param endpoint the custom endpoint to send session data to
+     * @deprecated use {@link com.bugsnag.android.Configuration#setEndpoints(String, String)}
+     */
+    @Deprecated
+    public void setSessionEndpoint(String endpoint) {
+        this.sessionEndpoint = endpoint;
     }
 
     /**
@@ -129,8 +206,9 @@ public class Configuration extends Observable implements Observer {
      *
      * @return build UUID
      */
+    @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
     public String getBuildUUID() {
-        return buildUUID;
+        return buildUuid;
     }
 
     /**
@@ -139,10 +217,11 @@ public class Configuration extends Observable implements Observer {
      * the same appId and versionCode. The default value is read from the
      * com.bugsnag.android.BUILD_UUID meta-data field in your app manifest.
      *
-     * @param buildUUID the buildUUID.
+     * @param buildUuid the buildUUID.
      */
-    public void setBuildUUID(String buildUUID) {
-        this.buildUUID = buildUUID;
+    @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
+    public void setBuildUUID(String buildUuid) {
+        this.buildUuid = buildUuid;
         notifyBugsnagObservers(NotifyType.APP);
     }
 
@@ -152,7 +231,7 @@ public class Configuration extends Observable implements Observer {
      * @return Filters
      */
     public String[] getFilters() {
-        return filters;
+        return metaData.getFilters();
     }
 
     /**
@@ -169,7 +248,6 @@ public class Configuration extends Observable implements Observer {
      * @param filters a list of keys to filter from metaData
      */
     public void setFilters(String[] filters) {
-        this.filters = filters;
         this.metaData.setFilters(filters);
     }
 
@@ -305,7 +383,28 @@ public class Configuration extends Observable implements Observer {
         this.enableExceptionHandler = enableExceptionHandler;
     }
 
-    /*
+    /**
+     * Get whether or not User sessions are captured automatically.
+     *
+     * @return true if sessions are captured automatically
+     */
+    public boolean shouldAutoCaptureSessions() {
+        return autoCaptureSessions;
+    }
+
+    /**
+     * Sets whether or not Bugsnag should automatically capture and report User sessions whenever
+     * the app enters the foreground.
+     * <p>
+     * By default this behavior is disabled.
+     *
+     * @param autoCapture whether sessions should be captured automatically
+     */
+    public void setAutoCaptureSessions(boolean autoCapture) {
+        this.autoCaptureSessions = autoCapture;
+    }
+
+    /**
      * Gets any meta data associated with the error
      *
      * @return meta data
@@ -393,14 +492,115 @@ public class Configuration extends Observable implements Observer {
     }
 
     /**
+     * Returns whether automatic breadcrumb capture or common application events is enabled.
+     * @return true if automatic capture is enabled, otherwise false.
+     */
+    public boolean isAutomaticallyCollectingBreadcrumbs() {
+        return automaticallyCollectBreadcrumbs;
+    }
+
+    /**
+     * By default, we will automatically add breadcrumbs for common application events,
+     * such as activity lifecycle events, and system intents.
+     * To disable this behavior, set this property to false.
+     *
+     * @param automaticallyCollectBreadcrumbs whether breadcrumbs should be automatically captured
+     *                                        or not
+     */
+    public void setAutomaticallyCollectBreadcrumbs(boolean automaticallyCollectBreadcrumbs) {
+        this.automaticallyCollectBreadcrumbs = automaticallyCollectBreadcrumbs;
+    }
+
+    /**
+     * Intended for internal use only - sets the type of the notifier (e.g. Android, React Native)
+     * @param notifierType the notifier type
+     */
+    public void setNotifierType(String notifierType) {
+        this.notifierType = notifierType;
+    }
+
+    /**
+     * Intended for internal use only - sets the code bundle id for React Native
+     * @param codeBundleId the code bundle id
+     */
+    public void setCodeBundleId(String codeBundleId) {
+        this.codeBundleId = codeBundleId;
+    }
+
+    String getCodeBundleId() {
+        return codeBundleId;
+    }
+
+    String getNotifierType() {
+        return notifierType;
+    }
+
+    /**
+     * Retrieves the delivery used to make HTTP requests to Bugsnag.
+     *
+     * @return the current delivery
+     */
+    @NonNull
+    public Delivery getDelivery() {
+        return delivery;
+    }
+
+    /**
+     * Sets the delivery used to make HTTP requests to Bugsnag. A default implementation is
+     * provided, but you may wish to use your own implementation if you have requirements such
+     * as pinning SSL certificates, for example.
+     * <p>
+     * Any custom implementation must be capable of sending
+     * <a href="https://docs.bugsnag.com/api/error-reporting/">Error Reports</a>
+     * and <a href="https://docs.bugsnag.com/api/sessions/">Sessions</a> as
+     * documented at <a href="https://docs.bugsnag.com/api/">https://docs.bugsnag.com/api/</a>
+     *
+     * @param delivery the custom HTTP client implementation
+     */
+    public void setDelivery(@NonNull Delivery delivery) {
+        //noinspection ConstantConditions
+        if (delivery == null) {
+            throw new IllegalArgumentException("Delivery cannot be null");
+        }
+        this.delivery = delivery;
+    }
+
+    /**
+     * Supplies the headers which must be used in any request sent to the Error Reporting API.
+     *
+     * @return the HTTP headers
+     */
+    public Map<String, String> getErrorApiHeaders() {
+        Map<String, String> map = new HashMap<>();
+        map.put(HEADER_API_PAYLOAD_VERSION, "4.0");
+        map.put(HEADER_API_KEY, apiKey);
+        map.put(HEADER_BUGSNAG_SENT_AT, DateUtils.toIso8601(new Date()));
+        return map;
+    }
+
+    /**
+     * Supplies the headers which must be used in any request sent to the Session Tracking API.
+     *
+     * @return the HTTP headers
+     */
+    public Map<String, String> getSessionApiHeaders() {
+        Map<String, String> map = new HashMap<>();
+        map.put(HEADER_API_PAYLOAD_VERSION, "1.0");
+        map.put(HEADER_API_KEY, apiKey);
+        map.put(HEADER_BUGSNAG_SENT_AT, DateUtils.toIso8601(new Date()));
+        return map;
+    }
+
+    /**
      * Checks if the given release stage should be notified or not
      *
      * @param releaseStage the release stage to check
      * @return true if the release state should be notified else false
      */
     protected boolean shouldNotifyForReleaseStage(String releaseStage) {
-        if (this.notifyReleaseStages == null)
+        if (this.notifyReleaseStages == null) {
             return true;
+        }
 
         List<String> stages = Arrays.asList(this.notifyReleaseStages);
         return stages.contains(releaseStage);
@@ -413,8 +613,9 @@ public class Configuration extends Observable implements Observer {
      * @return true if the exception class should be ignored else false
      */
     protected boolean shouldIgnoreClass(String className) {
-        if (this.ignoreClasses == null)
+        if (this.ignoreClasses == null) {
             return false;
+        }
 
         List<String> classes = Arrays.asList(this.ignoreClasses);
         return classes.contains(className);
@@ -426,7 +627,20 @@ public class Configuration extends Observable implements Observer {
      * @param beforeNotify the new before notify task
      */
     protected void beforeNotify(BeforeNotify beforeNotify) {
-        this.beforeNotifyTasks.add(beforeNotify);
+        if (!beforeNotifyTasks.contains(beforeNotify)) {
+            beforeNotifyTasks.add(beforeNotify);
+        }
+    }
+
+    /**
+     * Adds a new before breadcrumb task
+     *
+     * @param beforeRecordBreadcrumb the new before breadcrumb task
+     */
+    protected void beforeRecordBreadcrumb(BeforeRecordBreadcrumb beforeRecordBreadcrumb) {
+        if (!beforeRecordBreadcrumbTasks.contains(beforeRecordBreadcrumb)) {
+            beforeRecordBreadcrumbTasks.add(beforeRecordBreadcrumb);
+        }
     }
 
     /**
@@ -453,7 +667,7 @@ public class Configuration extends Observable implements Observer {
     }
 
     @Override
-    public void update(Observable o, Object arg) {
+    public void update(Observable observable, Object arg) {
         if (arg instanceof Integer) {
             NotifyType type = NotifyType.fromInt((Integer) arg);
 
@@ -463,4 +677,12 @@ public class Configuration extends Observable implements Observer {
         }
     }
 
+    /**
+     * Gets any before breadcrumb tasks to run
+     *
+     * @return the before breadcrumb tasks
+     */
+    protected Collection<BeforeRecordBreadcrumb> getBeforeRecordBreadcrumbTasks() {
+        return beforeRecordBreadcrumbTasks;
+    }
 }

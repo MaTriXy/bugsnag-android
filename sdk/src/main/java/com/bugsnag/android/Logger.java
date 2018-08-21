@@ -2,6 +2,9 @@ package com.bugsnag.android;
 
 import android.util.Log;
 
+import com.facebook.infer.annotation.ThreadSafe;
+
+@ThreadSafe
 final class Logger {
 
     private static final String LOG_TAG = "Bugsnag";
@@ -22,9 +25,9 @@ final class Logger {
         }
     }
 
-    static void warn(String message, Throwable e) {
+    static void warn(String message, Throwable throwable) {
         if (enabled) {
-            Log.w(LOG_TAG, message, e);
+            Log.w(LOG_TAG, message, throwable);
         }
     }
 

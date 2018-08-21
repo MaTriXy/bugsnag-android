@@ -25,6 +25,8 @@ import java.io.Writer;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.annotation.concurrent.NotThreadSafe;
+
 /**
  * Writes a JSON (<a href="http://www.ietf.org/rfc/rfc4627.txt">RFC 4627</a>)
  * encoded value to a stream, one token at a time. The stream includes both
@@ -123,6 +125,8 @@ import java.util.List;
  * @author Jesse Wilson
  * @since 1.6
  */
+@SuppressWarnings({"checkstyle:AvoidEscapedUnicodeCharacters", "checkstyle:IllegalTokenText"})
+@NotThreadSafe
 public class JsonWriter implements Closeable {
 
     /**
@@ -196,7 +200,7 @@ public class JsonWriter implements Closeable {
     static {
         REPLACEMENT_CHARS = new String[128];
         for (int i = 0; i <= 0x1f; i++) {
-            REPLACEMENT_CHARS[i] = String.format("\\u%04x", (int) i);
+            REPLACEMENT_CHARS[i] = String.format("\\u%04x", i);
         }
         REPLACEMENT_CHARS['"'] = "\\\"";
         REPLACEMENT_CHARS['\\'] = "\\\\";
@@ -415,6 +419,21 @@ public class JsonWriter implements Closeable {
     }
 
     /**
+     * Flushes and closes this writer and the underlying {@link Writer}.
+     *
+     * @throws IOException if the JSON document is incomplete.
+     */
+    public void close() throws IOException {
+        out.close();
+
+        int size = stack.size();
+        if (size > 1 || size == 1 && stack.get(size - 1) != JsonScope.NONEMPTY_DOCUMENT) {
+            throw new IOException("Incomplete document");
+        }
+        stack.clear();
+    }
+
+    /**
      * Returns the value on the top of the stack.
      */
     private JsonScope peek() {
@@ -462,23 +481,6 @@ public class JsonWriter implements Closeable {
     }
 
     /**
-     * Encodes {@code value}.
-     *
-     * @param value the literal string value, or null to encode a null literal.
-     * @return this writer.
-     */
-    @NonNull
-    public JsonWriter value(@Nullable String value) throws IOException {
-        if (value == null) {
-            return nullValue();
-        }
-        writeDeferredName();
-        beforeValue(false);
-        string(value);
-        return this;
-    }
-
-    /**
      * Encodes {@code null}.
      *
      * @return this writer.
@@ -495,6 +497,23 @@ public class JsonWriter implements Closeable {
         }
         beforeValue(false);
         out.write("null");
+        return this;
+    }
+
+    /**
+     * Encodes {@code value}.
+     *
+     * @param value the literal string value, or null to encode a null literal.
+     * @return this writer.
+     */
+    @NonNull
+    public JsonWriter value(@Nullable String value) throws IOException {
+        if (value == null) {
+            return nullValue();
+        }
+        writeDeferredName();
+        beforeValue(false);
+        string(value);
         return this;
     }
 
@@ -593,37 +612,22 @@ public class JsonWriter implements Closeable {
         out.flush();
     }
 
-    /**
-     * Flushes and closes this writer and the underlying {@link Writer}.
-     *
-     * @throws IOException if the JSON document is incomplete.
-     */
-    public void close() throws IOException {
-        out.close();
-
-        int size = stack.size();
-        if (size > 1 || size == 1 && stack.get(size - 1) != JsonScope.NONEMPTY_DOCUMENT) {
-            throw new IOException("Incomplete document");
-        }
-        stack.clear();
-    }
-
     private void string(@NonNull String value) throws IOException {
         String[] replacements = htmlSafe ? HTML_SAFE_REPLACEMENT_CHARS : REPLACEMENT_CHARS;
         out.write("\"");
         int last = 0;
         int length = value.length();
         for (int i = 0; i < length; i++) {
-            char c = value.charAt(i);
+            char charAt = value.charAt(i);
             String replacement;
-            if (c < 128) {
-                replacement = replacements[c];
+            if (charAt < 128) {
+                replacement = replacements[charAt];
                 if (replacement == null) {
                     continue;
                 }
-            } else if (c == '\u2028') {
+            } else if (charAt == '\u2028') {
                 replacement = "\\u2028";
-            } else if (c == '\u2029') {
+            } else if (charAt == '\u2029') {
                 replacement = "\\u2029";
             } else {
                 continue;
@@ -675,7 +679,7 @@ public class JsonWriter implements Closeable {
      *             permitted as top-level elements.
      */
     @SuppressWarnings("fallthrough")
-    private void beforeValue(boolean root) throws IOException {
+    void beforeValue(boolean root) throws IOException {
         switch (peek()) {
             case NONEMPTY_DOCUMENT:
                 if (!lenient) {

@@ -1,7 +1,17 @@
 package com.bugsnag.android;
 
+import static com.bugsnag.android.BugsnagTestUtils.generateClient;
+import static com.bugsnag.android.BugsnagTestUtils.getSharedPrefs;
+import static com.bugsnag.android.BugsnagTestUtils.streamableToJson;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.filters.SmallTest;
@@ -12,16 +22,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static com.bugsnag.android.BugsnagTestUtils.getSharedPrefs;
-import static com.bugsnag.android.Client.MF_APP_VERSION;
-import static com.bugsnag.android.Client.MF_BUILD_UUID;
-import static com.bugsnag.android.Client.MF_ENABLE_EXCEPTION_HANDLER;
-import static com.bugsnag.android.Client.MF_ENDPOINT;
-import static com.bugsnag.android.Client.MF_PERSIST_USER_BETWEEN_SESSIONS;
-import static com.bugsnag.android.Client.MF_RELEASE_STAGE;
-import static com.bugsnag.android.Client.MF_SEND_THREADS;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import java.util.Collection;
+import java.util.Map;
 
 @RunWith(AndroidJUnit4.class)
 @SmallTest
@@ -34,6 +36,10 @@ public class ClientTest {
     private Context context;
     private Configuration config;
 
+    /**
+     * Generates a configuration and clears sharedPrefs values to begin the test with a clean slate
+     * @throws Exception if initialisation failed
+     */
     @Before
     public void setUp() throws Exception {
         context = InstrumentationRegistry.getContext();
@@ -41,9 +47,14 @@ public class ClientTest {
         config = new Configuration("api-key");
     }
 
+    /**
+     * Clears sharedPreferences to remove any values persisted
+     * @throws Exception if IO to sharedPrefs failed
+     */
     @After
     public void tearDown() throws Exception {
         clearSharedPrefs();
+        Async.cancelTasks();
     }
 
     private void clearSharedPrefs() {
@@ -79,12 +90,14 @@ public class ClientTest {
         client.notify(new RuntimeException("Testing"));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     public void testConfig() {
         config.setEndpoint("new-endpoint");
 
         Client client = new Client(context, config);
         client.setErrorReportApiClient(BugsnagTestUtils.generateErrorReportApiClient());
+        client.setSessionTrackingApiClient(BugsnagTestUtils.generateSessionTrackingApiClient());
 
         // Notify should not crash
         client.notify(new RuntimeException("Testing"));
@@ -95,8 +108,8 @@ public class ClientTest {
         setUserPrefs();
 
         config.setPersistUserBetweenSessions(true);
+        config.setDelivery(BugsnagTestUtils.generateDelivery());
         Client client = new Client(context, config);
-        client.setErrorReportApiClient(BugsnagTestUtils.generateErrorReportApiClient());
 
         final User user = new User();
 
@@ -164,16 +177,19 @@ public class ClientTest {
     @Test
     public void testEmptyManifestConfig() {
         Bundle data = new Bundle();
-        Configuration newConfig = Client.populateConfigFromManifest(new Configuration("api-key"), data);
+        Configuration protoConfig = new Configuration("api-key");
+        Configuration newConfig = Client.populateConfigFromManifest(protoConfig, data);
 
         assertEquals(config.getApiKey(), newConfig.getApiKey());
         assertEquals(config.getBuildUUID(), newConfig.getBuildUUID());
         assertEquals(config.getAppVersion(), newConfig.getAppVersion());
         assertEquals(config.getReleaseStage(), newConfig.getReleaseStage());
         assertEquals(config.getEndpoint(), newConfig.getEndpoint());
+        assertEquals(config.getSessionEndpoint(), newConfig.getSessionEndpoint());
         assertEquals(config.getSendThreads(), newConfig.getSendThreads());
         assertEquals(config.getEnableExceptionHandler(), newConfig.getEnableExceptionHandler());
-        assertEquals(config.getPersistUserBetweenSessions(), newConfig.getPersistUserBetweenSessions());
+        assertEquals(config.getPersistUserBetweenSessions(),
+            newConfig.getPersistUserBetweenSessions());
     }
 
     @Test
@@ -182,24 +198,157 @@ public class ClientTest {
         String appVersion = "v1.0";
         String releaseStage = "debug";
         String endpoint = "http://example.com";
+        String sessionEndpoint = "http://session-example.com";
 
         Bundle data = new Bundle();
-        data.putString(MF_BUILD_UUID, buildUuid);
-        data.putString(MF_APP_VERSION, appVersion);
-        data.putString(MF_RELEASE_STAGE, releaseStage);
-        data.putString(MF_ENDPOINT, endpoint);
-        data.putBoolean(MF_SEND_THREADS, false);
-        data.putBoolean(MF_ENABLE_EXCEPTION_HANDLER, false);
-        data.putBoolean(MF_PERSIST_USER_BETWEEN_SESSIONS, true);
+        data.putString("com.bugsnag.android.BUILD_UUID", buildUuid);
+        data.putString("com.bugsnag.android.APP_VERSION", appVersion);
+        data.putString("com.bugsnag.android.RELEASE_STAGE", releaseStage);
+        data.putString("com.bugsnag.android.SESSIONS_ENDPOINT", sessionEndpoint);
+        data.putString("com.bugsnag.android.ENDPOINT", endpoint);
+        data.putBoolean("com.bugsnag.android.SEND_THREADS", false);
+        data.putBoolean("com.bugsnag.android.ENABLE_EXCEPTION_HANDLER", false);
+        data.putBoolean("com.bugsnag.android.PERSIST_USER_BETWEEN_SESSIONS", true);
+        data.putBoolean("com.bugsnag.android.AUTO_CAPTURE_SESSIONS", true);
 
-        Configuration newConfig = Client.populateConfigFromManifest(new Configuration("api-key"), data);
+        Configuration protoConfig = new Configuration("api-key");
+        Configuration newConfig = Client.populateConfigFromManifest(protoConfig, data);
         assertEquals(buildUuid, newConfig.getBuildUUID());
         assertEquals(appVersion, newConfig.getAppVersion());
         assertEquals(releaseStage, newConfig.getReleaseStage());
         assertEquals(endpoint, newConfig.getEndpoint());
+        assertEquals(sessionEndpoint, newConfig.getSessionEndpoint());
         assertEquals(false, newConfig.getSendThreads());
         assertEquals(false, newConfig.getEnableExceptionHandler());
         assertEquals(true, newConfig.getPersistUserBetweenSessions());
+        assertEquals(true, newConfig.shouldAutoCaptureSessions());
     }
 
+    @Test
+    public void testMaxBreadcrumbs() {
+        Client client = generateClient();
+        assertEquals(0, client.breadcrumbs.store.size());
+
+        client.setMaxBreadcrumbs(1);
+
+        client.leaveBreadcrumb("test");
+        client.leaveBreadcrumb("another");
+        assertEquals(1, client.breadcrumbs.store.size());
+
+        Breadcrumb poll = client.breadcrumbs.store.poll();
+        assertEquals(BreadcrumbType.MANUAL, poll.getType());
+        assertEquals("manual", poll.getName());
+        assertEquals("another", poll.getMetadata().get("message"));
+    }
+
+    @Test
+    public void testClearBreadcrumbs() {
+        Client client = generateClient();
+        assertEquals(0, client.breadcrumbs.store.size());
+
+        client.leaveBreadcrumb("test");
+        assertEquals(1, client.breadcrumbs.store.size());
+
+        client.clearBreadcrumbs();
+        assertEquals(0, client.breadcrumbs.store.size());
+    }
+
+    @Test
+    public void testClientAddToTab() {
+        Client client = generateClient();
+        client.addToTab("drink", "cola", "cherry");
+        assertNotNull(client.getMetaData().getTab("drink"));
+    }
+
+    @Test
+    public void testClientClearTab() {
+        Client client = generateClient();
+        client.addToTab("drink", "cola", "cherry");
+
+        client.clearTab("drink");
+        assertTrue(client.getMetaData().getTab("drink").isEmpty());
+    }
+
+    @SuppressWarnings("deprecation")
+    @Test(expected = IllegalArgumentException.class)
+    public void testApiClientNullValidation() {
+        generateClient().setSessionTrackingApiClient(null);
+    }
+
+    @Test
+    public void testClientUser() {
+        Client client = generateClient();
+        assertNotNull(client.getUser());
+        assertNotNull(client.getUser().getId());
+    }
+
+    @Test
+    public void testBreadcrumbGetter() {
+        Client client = generateClient();
+        Collection<Breadcrumb> breadcrumbs = client.getBreadcrumbs();
+
+        int breadcrumbCount = breadcrumbs.size();
+        client.leaveBreadcrumb("Foo");
+        assertEquals(breadcrumbCount, breadcrumbs.size()); // should not pick up new breadcrumbs
+    }
+
+    @Test
+    public void testBreadcrumbStoreNotModified() {
+        Client client = generateClient();
+        Collection<Breadcrumb> breadcrumbs = client.getBreadcrumbs();
+        int breadcrumbCount = client.breadcrumbs.store.size();
+
+        breadcrumbs.clear(); // only the copy should be cleared
+        assertTrue(breadcrumbs.isEmpty());
+        assertEquals(breadcrumbCount, client.breadcrumbs.store.size());
+    }
+
+    @Test
+    public void testAppDataCollection() {
+        Client client = generateClient();
+        AppData appData = client.getAppData();
+        assertEquals(client.getAppData(), appData);
+    }
+
+    @Test
+    public void testAppDataMetaData() {
+        Client client = generateClient();
+        Map<String, Object> app = client.getAppData().getAppDataMetaData();
+        assertEquals(6, app.size());
+        assertEquals("Bugsnag Android Tests", app.get("name"));
+        assertEquals("com.bugsnag.android.test", app.get("packageName"));
+        assertEquals("1.0", app.get("versionName"));
+        assertNotNull(app.get("memoryUsage"));
+        assertTrue(app.containsKey("activeScreen"));
+        assertNotNull(app.get("lowMemory"));
+    }
+
+    @Test
+    public void testDeviceDataCollection() {
+        Client client = generateClient();
+        DeviceData deviceData = client.getDeviceData();
+        assertEquals(client.getDeviceData(), deviceData);
+    }
+
+    @Test
+    public void testPopulateDeviceMetadata() {
+        Client client = generateClient();
+        Map<String, Object> metaData = client.getDeviceData().getDeviceMetaData();
+
+        assertEquals(14, metaData.size());
+        assertNotNull(metaData.get("batteryLevel"));
+        assertNotNull(metaData.get("charging"));
+        assertNotNull(metaData.get("locationStatus"));
+        assertNotNull(metaData.get("networkAccess"));
+        assertNotNull(metaData.get("time"));
+        assertNotNull(metaData.get("brand"));
+        assertNotNull(metaData.get("apiLevel"));
+        assertNotNull(metaData.get("osBuild"));
+        assertNotNull(metaData.get("locale"));
+        assertNotNull(metaData.get("screenDensity"));
+        assertNotNull(metaData.get("dpi"));
+        assertNotNull(metaData.get("emulator"));
+        assertNotNull(metaData.get("screenResolution"));
+        assertNotNull(metaData.get("cpuAbi"));
+    }
 }

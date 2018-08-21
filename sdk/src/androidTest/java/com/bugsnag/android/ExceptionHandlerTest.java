@@ -1,19 +1,18 @@
 package com.bugsnag.android;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import android.content.Context;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.filters.SmallTest;
 import android.support.test.runner.AndroidJUnit4;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-
-import java.util.Date;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(AndroidJUnit4.class)
 @SmallTest
@@ -21,11 +20,22 @@ public class ExceptionHandlerTest {
 
     private Context context;
 
+    /**
+     * Sets the default exception handler to null to avoid any Bugsnag handlers created
+     * in previous test
+     *
+     * @throws Exception if initialisation failed
+     */
     @Before
     public void setUp() throws Exception {
         context = InstrumentationRegistry.getContext();
         // Start in a clean state, since we've created clients before in tests
         Thread.setDefaultUncaughtExceptionHandler(null);
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        Async.cancelTasks();
     }
 
     @Test
@@ -44,25 +54,11 @@ public class ExceptionHandlerTest {
         Client clientThree = new Client(context, "client-two");
         clientThree.disableExceptionHandler();
 
-        assertTrue(Thread.getDefaultUncaughtExceptionHandler() instanceof ExceptionHandler);
-        ExceptionHandler bugsnagHandler = (ExceptionHandler) Thread.getDefaultUncaughtExceptionHandler();
+        Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
+        assertTrue(handler instanceof ExceptionHandler);
+        ExceptionHandler bugsnagHandler = (ExceptionHandler) handler;
 
         assertEquals(2, bugsnagHandler.clientMap.size());
-    }
-
-    @Test
-    public void testIsCrashOnLaunch() throws Exception {
-        ExceptionHandler handler = new ExceptionHandler(null);
-        Date now = new Date();
-        Client client = new Client(context, new Configuration("123"), now);
-
-        assertTrue(handler.isCrashOnLaunch(client, now));
-
-        client.config.setLaunchCrashThresholdMs(0);
-        assertFalse(handler.isCrashOnLaunch(client, now));
-
-        client.config.setLaunchCrashThresholdMs(10000);
-        assertFalse(handler.isCrashOnLaunch(client, new Date(now.getTime() + 20000)));
     }
 
 }

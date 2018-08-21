@@ -3,7 +3,6 @@ package com.bugsnag.android;
 import android.support.annotation.NonNull;
 
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
@@ -25,16 +24,23 @@ class Async {
         private final AtomicInteger count = new AtomicInteger(1);
 
         @NonNull
-        public Thread newThread(@NonNull Runnable r) {
-            return new Thread(r, "Bugsnag Thread #" + count.getAndIncrement());
+        public Thread newThread(@NonNull Runnable runnable) {
+            return new Thread(runnable, "Bugsnag Thread #" + count.getAndIncrement());
         }
     };
-    private static final Executor EXECUTOR = new ThreadPoolExecutor(
+    private static final ThreadPoolExecutor EXECUTOR = new ThreadPoolExecutor(
         CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, KEEP_ALIVE_SECONDS, TimeUnit.SECONDS,
         POOL_WORK_QUEUE, THREAD_FACTORY);
 
     static void run(@NonNull Runnable task) throws RejectedExecutionException {
         EXECUTOR.execute(task);
+    }
+
+    static void cancelTasks() throws InterruptedException {
+        Logger.info("Cancelling tasks");
+        EXECUTOR.shutdown();
+        EXECUTOR.awaitTermination(2000, TimeUnit.MILLISECONDS);
+        Logger.info("Finishing cancelling tasks");
     }
 
 }

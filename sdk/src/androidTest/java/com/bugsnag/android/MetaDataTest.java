@@ -1,11 +1,19 @@
 package com.bugsnag.android;
 
+import static com.bugsnag.android.BugsnagTestUtils.streamableToJson;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import android.support.test.filters.SmallTest;
 import android.support.test.runner.AndroidJUnit4;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -14,15 +22,24 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
-
-import static com.bugsnag.android.BugsnagTestUtils.streamableToJson;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(AndroidJUnit4.class)
 @SmallTest
 public class MetaDataTest {
+
+    private Client client;
+
+    @Before
+    public void setUp() throws Exception {
+        client = BugsnagTestUtils.generateClient();
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        Async.cancelTasks();
+    }
 
     @Test
     public void testBasicSerialization() throws JSONException, IOException {
@@ -33,7 +50,8 @@ public class MetaDataTest {
         metaData.addToTab("example", "boolean", true);
         metaData.addToTab("example", "null", null);
         metaData.addToTab("example", "array", new String[]{"a", "b"});
-        metaData.addToTab("example", "collection", Arrays.asList("Hello", "World"));
+        List<String> strings = Arrays.asList("Hello", "World");
+        metaData.addToTab("example", "collection", strings);
 
         Map<String, String> map = new HashMap<>();
         map.put("key", "value");
@@ -77,7 +95,8 @@ public class MetaDataTest {
         JSONObject metaDataJson = streamableToJson(metaData);
         assertTrue(metaDataJson.has("example"));
 
-        JSONObject childMapJson = metaDataJson.getJSONObject("example").getJSONObject("map").getJSONObject("key");
+        JSONObject example = metaDataJson.getJSONObject("example");
+        JSONObject childMapJson = example.getJSONObject("map").getJSONObject("key");
         assertEquals("value", childMapJson.getString("key"));
     }
 
@@ -96,7 +115,8 @@ public class MetaDataTest {
         JSONObject metaDataJson = streamableToJson(metaData);
         assertTrue(metaDataJson.has("example"));
 
-        JSONArray childListJson = metaDataJson.getJSONObject("example").getJSONArray("list").getJSONArray(0);
+        JSONArray jsonArray = metaDataJson.getJSONObject("example").getJSONArray("list");
+        JSONArray childListJson = jsonArray.getJSONArray(0);
         assertEquals(2, childListJson.length());
         assertEquals("james", childListJson.get(0));
         assertEquals("test", childListJson.get(1));
@@ -147,6 +167,8 @@ public class MetaDataTest {
 
         MetaData merged = MetaData.merge(base, overrides);
         Map<String, Object> tab = merged.getTab("example");
+
+        @SuppressWarnings("unchecked")
         Map<String, String> mergedMap = (Map<String, String>) tab.get("map");
         assertEquals("fromOverrides", mergedMap.get("key"));
     }
@@ -187,5 +209,46 @@ public class MetaDataTest {
         assertEquals("[FILTERED]", sensitiveMapJson.getString("password"));
         assertEquals("[FILTERED]", sensitiveMapJson.getString("confirm_password"));
         assertEquals("safe", sensitiveMapJson.getString("normal"));
+    }
+
+    @Test
+    public void testFilterConstructor() throws Exception {
+        MetaData metaData = client.getMetaData();
+        metaData.addToTab("foo", "password", "abc123");
+        JSONObject jsonObject = streamableToJson(metaData);
+
+        assertArrayEquals(new String[]{"password"}, metaData.getFilters());
+        assertEquals("[FILTERED]", jsonObject.getJSONObject("foo").get("password"));
+    }
+
+    @Test
+    public void testFilterSetter() throws Exception {
+        MetaData metaData = new MetaData();
+        client.setMetaData(metaData);
+        assertArrayEquals(new String[]{"password"}, metaData.getFilters());
+    }
+
+    @Test
+    public void testFilterOverride() throws Exception {
+        MetaData metaData = client.getMetaData();
+        client.setFilters("test", "another");
+        assertArrayEquals(new String[]{"test", "another"}, metaData.getFilters());
+    }
+
+    @Test
+    public void testFilterMetadataOverride() throws Exception {
+        MetaData data = new MetaData();
+        data.setFilters("CUSTOM");
+        client.setMetaData(data);
+        assertArrayEquals(new String[]{"CUSTOM"}, data.getFilters());
+    }
+
+    @Test
+    public void testClearTab() throws Exception {
+        MetaData metaData = new MetaData();
+        metaData.addToTab("example", "string", "value");
+        metaData.clearTab("example");
+        JSONObject json = streamableToJson(metaData);
+        assertFalse(json.has("example"));
     }
 }

@@ -5,6 +5,7 @@ import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
 import java.io.IOException;
+import java.util.Map;
 
 /**
  * Information and associated diagnostics relating to a handled or unhandled
@@ -16,28 +17,53 @@ import java.io.IOException;
  * @see BeforeNotify
  */
 public class Error implements JsonStream.Streamable {
-    private static final String PAYLOAD_VERSION = "3";
+
+    @SuppressWarnings("NullableProblems") // set after construction
+    @NonNull
+    private Map<String, Object> appData;
+
+    @SuppressWarnings("NullableProblems") // set after construction
+    @NonNull
+    private Map<String, Object> deviceData;
+
+    @SuppressWarnings("NullableProblems") // set after construction
+    @NonNull
+    private User user;
+
+    @Nullable
+    private Severity severity;
+
+    @NonNull
+    private MetaData metaData = new MetaData();
+
+    @Nullable
+    private String groupingHash;
+
+    @Nullable
+    private String context;
 
     @NonNull
     final Configuration config;
-    private AppData appData;
-    private DeviceData deviceData;
-    private AppState appState;
-    private DeviceState deviceState;
+    private final String[] projectPackages;
+    private final Exceptions exceptions;
     private Breadcrumbs breadcrumbs;
-    private User user;
     private final Throwable exception;
-    private Severity severity = Severity.WARNING;
-    @NonNull private MetaData metaData = new MetaData();
-    private String groupingHash;
-    private String context;
     private final HandledState handledState;
+    private final Session session;
+    private final ThreadState threadState;
 
-    Error(@NonNull Configuration config, @NonNull Throwable exception, HandledState handledState, Severity severity) {
+    Error(@NonNull Configuration config, @NonNull Throwable exception,
+          HandledState handledState, @NonNull Severity severity,
+          Session session, ThreadState threadState) {
+        this.threadState = threadState;
         this.config = config;
         this.exception = exception;
         this.handledState = handledState;
         this.severity = severity;
+        this.session = session;
+
+        projectPackages = config.getProjectPackages();
+        exceptions = new Exceptions(config, exception);
     }
 
     @Override
@@ -47,7 +73,6 @@ public class Error implements JsonStream.Streamable {
 
         // Write error basics
         writer.beginObject();
-        writer.name("payloadVersion").value(PAYLOAD_VERSION);
         writer.name("context").value(getContext());
         writer.name("metaData").value(mergedMetaData);
 
@@ -55,29 +80,40 @@ public class Error implements JsonStream.Streamable {
         writer.name("severityReason").value(handledState);
         writer.name("unhandled").value(handledState.isUnhandled());
 
-        if (config.getProjectPackages() != null) {
+        if (projectPackages != null) {
             writer.name("projectPackages").beginArray();
-            for (String projectPackage : config.getProjectPackages()) {
+            for (String projectPackage : projectPackages) {
                 writer.value(projectPackage);
             }
             writer.endArray();
         }
 
         // Write exception info
-        writer.name("exceptions").value(new Exceptions(config, exception));
+        writer.name("exceptions").value(exceptions);
 
         // Write user info
         writer.name("user").value(user);
 
         // Write diagnostics
         writer.name("app").value(appData);
-        writer.name("appState").value(appState);
         writer.name("device").value(deviceData);
-        writer.name("deviceState").value(deviceState);
         writer.name("breadcrumbs").value(breadcrumbs);
         writer.name("groupingHash").value(groupingHash);
+
         if (config.getSendThreads()) {
-            writer.name("threads").value(new ThreadState(config));
+            writer.name("threads").value(threadState);
+        }
+
+        if (session != null) {
+            writer.name("session").beginObject();
+            writer.name("id").value(session.getId());
+            writer.name("startedAt").value(DateUtils.toIso8601(session.getStartedAt()));
+
+            writer.name("events").beginObject();
+            writer.name("handled").value(session.getHandledCount());
+            writer.name("unhandled").value(session.getUnhandledCount());
+            writer.endObject();
+            writer.endObject();
         }
 
         writer.endObject();
@@ -91,7 +127,7 @@ public class Error implements JsonStream.Streamable {
      *
      * @param context what was happening at the time of a crash
      */
-    public void setContext(String context) {
+    public void setContext(@Nullable String context) {
         this.context = context;
     }
 
@@ -104,11 +140,15 @@ public class Error implements JsonStream.Streamable {
             return context;
         } else if (config.getContext() != null) {
             return config.getContext();
-        } else if (appState != null) {
-            return appState.getActiveScreenClass();
-        } else {
-            return null;
+        } else if (metaData != null) {
+            Map<String, Object> app = metaData.getTab("app");
+            Object activeScreen = app.get("activeScreen");
+
+            if (activeScreen instanceof String) {
+                return (String) activeScreen;
+            }
         }
+        return null;
     }
 
     /**
@@ -119,8 +159,18 @@ public class Error implements JsonStream.Streamable {
      *
      * @param groupingHash a string to use when grouping errors
      */
-    public void setGroupingHash(String groupingHash) {
+    public void setGroupingHash(@Nullable String groupingHash) {
         this.groupingHash = groupingHash;
+    }
+
+    /**
+     * Get the grouping hash associated with this Error.
+     *
+     * @return the grouping hash, if set
+     */
+    @Nullable
+    public String getGroupingHash() {
+        return groupingHash;
     }
 
     /**
@@ -160,9 +210,14 @@ public class Error implements JsonStream.Streamable {
         this.user = new User(id, email, name);
     }
 
+    void setUser(@NonNull User user) {
+        this.user = user;
+    }
+
     /**
      * @return user information associated with this Error
      */
+    @NonNull
     public User getUser() {
         return user;
     }
@@ -270,8 +325,10 @@ public class Error implements JsonStream.Streamable {
     /**
      * Get the message from the exception contained in this Error report.
      */
+    @NonNull
     public String getExceptionMessage() {
-        return exception.getLocalizedMessage();
+        String localizedMessage = exception.getLocalizedMessage();
+        return localizedMessage != null ? localizedMessage : "";
     }
 
     /**
@@ -287,27 +344,35 @@ public class Error implements JsonStream.Streamable {
      * @param id the device id
      */
     public void setDeviceId(@Nullable String id) {
-        deviceData.id = id;
+        deviceData.put("id", id);
     }
 
-    void setAppData(AppData appData) {
+    /**
+     * Retrieves the map of data associated with this error
+     *
+     * @return the app metadata
+     */
+    @NonNull
+    Map<String, Object> getAppData() {
+        return appData;
+    }
+    /**
+     * Retrieves the {@link DeviceData} associated with this error
+     *
+     * @return the device metadata
+     */
+
+    @NonNull
+    public Map<String, Object> getDeviceData() {
+        return deviceData;
+    }
+
+    void setAppData(@NonNull Map<String, Object> appData) {
         this.appData = appData;
     }
 
-    void setDeviceData(DeviceData deviceData) {
+    void setDeviceData(@NonNull Map<String, Object> deviceData) {
         this.deviceData = deviceData;
-    }
-
-    void setAppState(AppState appState) {
-        this.appState = appState;
-    }
-
-    void setDeviceState(DeviceState deviceState) {
-        this.deviceState = deviceState;
-    }
-
-    void setUser(User user) {
-        this.user = user;
     }
 
     void setBreadcrumbs(Breadcrumbs breadcrumbs) {
@@ -318,9 +383,15 @@ public class Error implements JsonStream.Streamable {
         return config.shouldIgnoreClass(getExceptionName());
     }
 
+    HandledState getHandledState() {
+        return handledState;
+    }
+
     static class Builder {
         private final Configuration config;
         private final Throwable exception;
+        private final Session session;
+        private final ThreadState threadState;
         private Severity severity = Severity.WARNING;
         private MetaData metaData;
         private String attributeValue;
@@ -328,15 +399,23 @@ public class Error implements JsonStream.Streamable {
         @HandledState.SeverityReason
         private String severityReasonType;
 
-        Builder(@NonNull Configuration config, @NonNull Throwable exception) {
+        Builder(@NonNull Configuration config, @NonNull Throwable exception, Session session) {
+            this.threadState = new ThreadState(config);
             this.config = config;
             this.exception = exception;
             this.severityReasonType = HandledState.REASON_USER_SPECIFIED; // default
+
+            if (session != null
+                && !config.shouldAutoCaptureSessions() && session.isAutoCaptured()) {
+                this.session = null;
+            } else {
+                this.session = session;
+            }
         }
 
         Builder(@NonNull Configuration config, @NonNull String name,
-               @NonNull String message, @NonNull StackTraceElement[] frames) {
-            this(config, new BugsnagException(name, message, frames));
+                @NonNull String message, @NonNull StackTraceElement[] frames, Session session) {
+            this(config, new BugsnagException(name, message, frames), session);
         }
 
         Builder severityReasonType(@HandledState.SeverityReason String severityReasonType) {
@@ -362,7 +441,8 @@ public class Error implements JsonStream.Streamable {
         Error build() {
             HandledState handledState =
                 HandledState.newInstance(severityReasonType, severity, attributeValue);
-            Error error = new Error(config, exception, handledState, severity);
+            Error error = new Error(config, exception, handledState,
+                severity, session, threadState);
 
             if (metaData != null) {
                 error.setMetaData(metaData);

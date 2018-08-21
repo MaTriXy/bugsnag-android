@@ -1,12 +1,15 @@
 package com.bugsnag.android;
 
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertNotNull;
+
 import android.support.test.InstrumentationRegistry;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertNotNull;
+import java.util.Map;
 
 /**
  * Ensures that setting metadata to null doesn't result in NPEs
@@ -20,35 +23,39 @@ public class NullMetadataTest {
     private Configuration config;
     private Throwable throwable;
 
+    /**
+     * Generates a bugsnag client with a NOP error api client
+     *
+     * @throws Exception if initialisation failed
+     */
     @Before
     public void setUp() throws Exception {
         config = new Configuration("api-key");
-        Bugsnag.init(InstrumentationRegistry.getContext(), config);
-        Bugsnag.setErrorReportApiClient(new ErrorReportApiClient() {
-            @Override
-            public void postReport(String urlString, Report report) throws NetworkException, BadResponseException {
-
-            }
-        });
-
+        BugsnagTestUtils.generateClient();
         throwable = new RuntimeException("Test");
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        Async.cancelTasks();
     }
 
     @Test
     public void testErrorDefaultMetaData() throws Exception {
-        Error error = new Error.Builder(config, throwable).build();
+        Error error = new Error.Builder(config, throwable, null).build();
         validateDefaultMetadata(error.getMetaData());
     }
 
     @Test
     public void testSecondErrorDefaultMetaData() throws Exception {
-        Error error = new Error.Builder(config, "RuntimeException", "Something broke", new StackTraceElement[]{}).build();
+        Error error = new Error.Builder(config, "RuntimeException",
+            "Something broke", new StackTraceElement[]{}, null).build();
         validateDefaultMetadata(error.getMetaData());
     }
 
     @Test
     public void testErrorSetMetadataRef() throws Exception {
-        Error error = new Error.Builder(config, throwable).build();
+        Error error = new Error.Builder(config, throwable, null).build();
         MetaData metaData = new MetaData();
         metaData.addToTab(TAB_KEY, "test", "data");
         error.setMetaData(metaData);
@@ -57,7 +64,7 @@ public class NullMetadataTest {
 
     @Test
     public void testErrorSetNullMetadata() throws Exception {
-        Error error = new Error.Builder(config, throwable).build();
+        Error error = new Error.Builder(config, throwable, null).build();
         error.setMetaData(null);
         validateDefaultMetadata(error.getMetaData());
     }
@@ -90,7 +97,7 @@ public class NullMetadataTest {
                 return false;
             }
         });
-        Error error = new Error.Builder(config, new Throwable()).build();
+        Error error = new Error.Builder(config, new Throwable(), null).build();
         Client client = Bugsnag.getClient();
         client.notify(error, DeliveryStyle.SAME_THREAD, null);
     }

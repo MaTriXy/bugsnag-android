@@ -2,9 +2,12 @@ package com.bugsnag.android;
 
 import android.support.annotation.Nullable;
 
+import com.facebook.infer.annotation.ThreadSafe;
+
 /**
  * Used to inform the NDK library which type of data needs to be updated
  */
+@ThreadSafe
 public enum NotifyType {
     ALL(1),
     USER(2),
@@ -26,6 +29,11 @@ public enum NotifyType {
         return intValue;
     }
 
+    /**
+     * Maps the notifyType from an int
+     * @param intValue the int
+     * @return the notifytype
+     */
     @Nullable
     public static NotifyType fromInt(@Nullable Integer intValue) {
         if (intValue != null) {

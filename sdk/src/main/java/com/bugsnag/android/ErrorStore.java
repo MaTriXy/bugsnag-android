@@ -1,30 +1,34 @@
 package com.bugsnag.android;
 
 import android.content.Context;
-import android.os.StrictMode;
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+
+import com.facebook.infer.annotation.ThreadSafe;
 
 import java.io.File;
-import java.io.FileWriter;
-import java.io.Writer;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 
 /**
  * Store and flush Error reports which couldn't be sent immediately due to
  * lack of network connectivity.
  */
-class ErrorStore {
+@ThreadSafe
+class ErrorStore extends FileStore<Error> {
 
-    private static final String UNSENT_ERROR_PATH = "/bugsnag-errors/";
     private static final String STARTUP_CRASH = "_startupcrash";
-    private static final int MAX_STORED_ERRORS = 100;
+    private static final long LAUNCH_CRASH_TIMEOUT_MS = 2000;
+    private static final int LAUNCH_CRASH_POLL_MS = 50;
+
+    private volatile boolean flushOnLaunchCompleted = false;
+    private final Semaphore semaphore = new Semaphore(1);
 
     static final Comparator<File> ERROR_REPORT_COMPARATOR = new Comparator<File>() {
         @Override
@@ -44,56 +48,60 @@ class ErrorStore {
         }
     };
 
-    @NonNull
-    private final Configuration config;
-
-    @Nullable
-    final String path;
-
     ErrorStore(@NonNull Configuration config, @NonNull Context appContext) {
-        this.config = config;
-
-        String path;
-        try {
-            path = appContext.getCacheDir().getAbsolutePath() + UNSENT_ERROR_PATH;
-
-            File outFile = new File(path);
-            outFile.mkdirs();
-            if (!outFile.exists()) {
-                Logger.warn("Could not prepare error storage directory");
-                path = null;
-            }
-        } catch (Exception e) {
-            Logger.warn("Could not prepare error storage directory", e);
-            path = null;
-        }
-        this.path = path;
+        super(config, appContext,
+            "/bugsnag-errors/", 128, ERROR_REPORT_COMPARATOR);
     }
 
-    void flushOnLaunch(ErrorReportApiClient errorReportApiClient) {
-        List<File> crashReports = findLaunchCrashReports();
+    void flushOnLaunch() {
+        if (config.getLaunchCrashThresholdMs() != 0) {
+            List<File> storedFiles = findStoredFiles();
+            final List<File> crashReports = findLaunchCrashReports(storedFiles);
 
-        if (crashReports.isEmpty() && config.getLaunchCrashThresholdMs() > 0) {
-            flushAsync(errorReportApiClient); // if disabled or no startup crash, flush async
-        } else {
-            // flush synchronously as the app may crash very soon.
-            // need to disable strictmode and this also risks ANR,
-            // but can capture reports which may not otherwise be sent
-            StrictMode.ThreadPolicy originalThreadPolicy = StrictMode.getThreadPolicy();
-            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.LAX);
+            if (!crashReports.isEmpty()) {
 
-            for (File crashReport : crashReports) {
-                flushErrorReport(crashReport, errorReportApiClient);
+                // Block the main thread for a 2 second interval as the app may crash very soon.
+                // The request itself will run in a background thread and will continue after the 2
+                // second period until the request completes, or the app crashes.
+                flushOnLaunchCompleted = false;
+                Logger.info("Attempting to send launch crash reports");
+
+                try {
+                    Async.run(new Runnable() {
+                        @Override
+                        public void run() {
+                            flushReports(crashReports);
+                            flushOnLaunchCompleted = true;
+                        }
+                    });
+                } catch (RejectedExecutionException ex) {
+                    Logger.warn("Failed to flush launch crash reports", ex);
+                    flushOnLaunchCompleted = true;
+                }
+
+                long waitMs = 0;
+
+                while (!flushOnLaunchCompleted && waitMs < LAUNCH_CRASH_TIMEOUT_MS) {
+                    try {
+                        Thread.sleep(LAUNCH_CRASH_POLL_MS);
+                        waitMs += LAUNCH_CRASH_POLL_MS;
+                    } catch (InterruptedException exception) {
+                        Logger.warn("Interrupted while waiting for launch crash report request");
+                    }
+                }
+                Logger.info("Continuing with Bugsnag initialisation");
             }
-            StrictMode.setThreadPolicy(originalThreadPolicy);
+            cancelQueuedFiles(storedFiles); // cancel all previously found files
         }
+
+        flushAsync(); // flush any remaining errors async that weren't delivered
     }
 
     /**
      * Flush any on-disk errors to Bugsnag
      */
-    void flushAsync(final ErrorReportApiClient errorReportApiClient) {
-        if (path == null) {
+    void flushAsync() {
+        if (storeDirectory == null) {
             return;
         }
 
@@ -101,117 +109,72 @@ class ErrorStore {
             Async.run(new Runnable() {
                 @Override
                 public void run() {
-                    // Look up all saved error files
-                    File exceptionDir = new File(path);
-                    if (!exceptionDir.exists() || !exceptionDir.isDirectory()) return;
-
-                    File[] errorFiles = exceptionDir.listFiles();
-                    if (errorFiles != null && errorFiles.length > 0) {
-                        Logger.info(String.format(Locale.US, "Sending %d saved error(s) to Bugsnag", errorFiles.length));
-
-                        for (File errorFile : errorFiles) {
-                            flushErrorReport(errorFile, errorReportApiClient);
-                        }
-                    }
+                    flushReports(findStoredFiles());
                 }
             });
-        } catch (RejectedExecutionException e) {
+        } catch (RejectedExecutionException exception) {
             Logger.warn("Failed to flush all on-disk errors, retaining unsent errors for later.");
         }
     }
 
-    private void flushErrorReport(File errorFile, ErrorReportApiClient errorReportApiClient) {
-        try {
-            Report report = new Report(config.getApiKey(), errorFile);
-            errorReportApiClient.postReport(config.getEndpoint(), report);
+    private void flushReports(Collection<File> storedReports) {
+        if (!storedReports.isEmpty() && semaphore.tryAcquire(1)) {
+            try {
+                Logger.info(String.format(Locale.US,
+                    "Sending %d saved error(s) to Bugsnag", storedReports.size()));
 
-            Logger.info("Deleting sent error file " + errorFile.getName());
-            if (!errorFile.delete()) {
-                errorFile.deleteOnExit();
-            }
-        } catch (DefaultHttpClient.NetworkException e) {
-            Logger.warn("Could not send previously saved error(s) to Bugsnag, will try again later", e);
-        } catch (Exception e) {
-            Logger.warn("Problem sending unsent error from disk", e);
-            if (!errorFile.delete()) {
-                errorFile.deleteOnExit();
+                for (File errorFile : storedReports) {
+                    flushErrorReport(errorFile);
+                }
+            } finally {
+                semaphore.release(1);
             }
         }
     }
 
-    /**
-     * Write an error to disk, for later sending. Returns the filename of the report location
-     */
-    @Nullable
-    String write(@NonNull Error error) {
-        if (path == null) {
-            return null;
-        }
-
-        // Limit number of saved errors to prevent disk space issues
-        File exceptionDir = new File(path);
-        if (exceptionDir.isDirectory()) {
-            File[] files = exceptionDir.listFiles();
-            if (files != null && files.length >= MAX_STORED_ERRORS) {
-                // Sort files then delete the first one (oldest timestamp)
-                Arrays.sort(files, ERROR_REPORT_COMPARATOR);
-                Logger.warn(String.format("Discarding oldest error as stored error limit reached (%s)", files[0].getPath()));
-                if (!files[0].delete()) {
-                    files[0].deleteOnExit();
-                }
-            }
-        }
-
-        MetaData metaData = error.getMetaData();
-
-        boolean isStartupCrash = metaData != null &&
-            metaData.getTab(ExceptionHandler.LAUNCH_CRASH_TAB)
-                .containsKey(ExceptionHandler.LAUNCH_CRASH_KEY);
-        String suffix = isStartupCrash ? STARTUP_CRASH : "";
-        String filename = String.format(Locale.US, "%s%d%s.json", path, System.currentTimeMillis(), suffix);
-        Writer out = null;
+    private void flushErrorReport(File errorFile) {
         try {
-            out = new FileWriter(filename);
+            Report report = new Report(config.getApiKey(), errorFile);
+            config.getDelivery().deliver(report, config);
 
-            JsonStream stream = new JsonStream(out);
-            stream.value(error);
-            stream.close();
-
-            Logger.info(String.format("Saved unsent error to disk (%s) ", filename));
-            return filename;
-        } catch (Exception e) {
-            Logger.warn(String.format("Couldn't save unsent error to disk (%s) ", filename), e);
-        } finally {
-            IOUtils.closeQuietly(out);
+            deleteStoredFiles(Collections.singleton(errorFile));
+            Logger.info("Deleting sent error file " + errorFile.getName());
+        } catch (DeliveryFailureException exception) {
+            cancelQueuedFiles(Collections.singleton(errorFile));
+            Logger.warn("Could not send previously saved error(s)"
+                + " to Bugsnag, will try again later", exception);
+        } catch (Exception exception) {
+            deleteStoredFiles(Collections.singleton(errorFile));
+            Logger.warn("Problem sending unsent error from disk", exception);
         }
-        return null;
     }
 
     boolean isLaunchCrashReport(File file) {
-        String name = file.getName();
-        return name.matches("[0-9]+_startupcrash\\.json");
+        return file.getName().endsWith("_startupcrash.json");
     }
 
-    private List<File> findLaunchCrashReports() {
-        if (path == null) {
-            return Collections.emptyList();
-        }
-
-        File exceptionDir = new File(path);
+    private List<File> findLaunchCrashReports(Collection<File> storedFiles) {
         List<File> launchCrashes = new ArrayList<>();
 
-        if (exceptionDir.isDirectory()) {
-            File[] files = exceptionDir.listFiles();
-
-            if (files != null && files.length > 0) {
-                for (File file : files) {
-                    if (isLaunchCrashReport(file)) {
-                        launchCrashes.add(file);
-                    }
-                }
+        for (File file : storedFiles) {
+            if (isLaunchCrashReport(file)) {
+                launchCrashes.add(file);
             }
         }
         return launchCrashes;
+    }
+
+    @NonNull
+    @Override
+    String getFilename(Error error) {
+        boolean isStartupCrash = isStartupCrash(AppData.getDurationMs());
+        String suffix = isStartupCrash ? STARTUP_CRASH : "";
+        return String.format(Locale.US, "%s%d_%s%s.json",
+            storeDirectory, System.currentTimeMillis(), UUID.randomUUID().toString(), suffix);
+    }
+
+    boolean isStartupCrash(long durationMs) {
+        return durationMs < config.getLaunchCrashThresholdMs();
     }
 
 }

@@ -16,6 +16,7 @@ import java.util.Map;
  *
  * @see Client
  */
+@SuppressWarnings("checkstyle:JavadocTagContinuationIndentation")
 public final class Bugsnag {
 
     @Nullable
@@ -30,7 +31,7 @@ public final class Bugsnag {
      *
      * @param androidContext an Android context, usually <code>this</code>
      */
-    @Nullable
+    @NonNull
     public static Client init(@NonNull Context androidContext) {
         client = new Client(androidContext);
         NativeInterface.configureClientObservers(client);
@@ -43,7 +44,7 @@ public final class Bugsnag {
      * @param androidContext an Android context, usually <code>this</code>
      * @param apiKey         your Bugsnag API key from your Bugsnag dashboard
      */
-    @Nullable
+    @NonNull
     public static Client init(@NonNull Context androidContext, @Nullable String apiKey) {
         client = new Client(androidContext, apiKey);
         NativeInterface.configureClientObservers(client);
@@ -57,8 +58,10 @@ public final class Bugsnag {
      * @param apiKey                 your Bugsnag API key from your Bugsnag dashboard
      * @param enableExceptionHandler should we automatically handle uncaught exceptions?
      */
-    @Nullable
-    public static Client init(@NonNull Context androidContext, @Nullable String apiKey, boolean enableExceptionHandler) {
+    @NonNull
+    public static Client init(@NonNull Context androidContext,
+                              @Nullable String apiKey,
+                              boolean enableExceptionHandler) {
         client = new Client(androidContext, apiKey, enableExceptionHandler);
         NativeInterface.configureClientObservers(client);
         return client;
@@ -70,7 +73,7 @@ public final class Bugsnag {
      * @param androidContext an Android context, usually <code>this</code>
      * @param config         a configuration for the Client
      */
-    @Nullable
+    @NonNull
     public static Client init(@NonNull Context androidContext, @NonNull Configuration config) {
         client = new Client(androidContext, config);
         NativeInterface.configureClientObservers(client);
@@ -114,7 +117,8 @@ public final class Bugsnag {
      * endpoint.
      *
      * @param endpoint the custom endpoint to send report to
-     * @deprecated use {@link com.bugsnag.android.Configuration#setEndpoint(String)} instead.
+     * @deprecated use {@link com.bugsnag.android.Configuration#setEndpoints(String, String)}
+     * instead.
      */
     @Deprecated
     public static void setEndpoint(final String endpoint) {
@@ -127,10 +131,11 @@ public final class Bugsnag {
      * the same appId and versionCode. The default value is read from the
      * com.bugsnag.android.BUILD_UUID meta-data field in your app manifest.
      *
-     * @param buildUUID the buildUUID.
+     * @param buildUuid the buildUuid.
      */
-    public static void setBuildUUID(final String buildUUID) {
-        getClient().setBuildUUID(buildUUID);
+    @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
+    public static void setBuildUUID(final String buildUuid) {
+        getClient().setBuildUUID(buildUuid);
     }
 
     /**
@@ -219,6 +224,18 @@ public final class Bugsnag {
     }
 
     /**
+     * Sets whether or not Bugsnag should automatically capture and report User sessions whenever
+     * the app enters the foreground.
+     * <p>
+     * By default this behavior is disabled.
+     *
+     * @param autoCapture whether sessions should be captured automatically
+     */
+    public static void setAutoCaptureSessions(boolean autoCapture) {
+        getClient().setAutoCaptureSessions(autoCapture);
+    }
+
+    /**
      * Set details of the user currently using your application.
      * You can search for this information in your Bugsnag dashboard.
      * <p>
@@ -282,10 +299,31 @@ public final class Bugsnag {
      * https://docs.bugsnag.com/api/error-reporting/</a>
      *
      * @param errorReportApiClient the custom HTTP client implementation
+     *
+     * @deprecated use {@link Configuration#setDelivery(Delivery)} instead
      */
+    @Deprecated
     public static void setErrorReportApiClient(@NonNull ErrorReportApiClient errorReportApiClient) {
         getClient().setErrorReportApiClient(errorReportApiClient);
     }
+
+    /**
+     * Replaces the Default HTTP Client with a custom implementation. This allows for custom
+     * requirements such as certificate pinning to be achieved.
+     * <p/>
+     * <p>
+     * The client implementation, and must be capable of sending Session Tracking Payloads to
+     * the Bugsnag API.
+     *
+     * @param apiClient the custom HTTP client implementation
+     *
+     * @deprecated use {@link Configuration#setDelivery(Delivery)} instead
+     */
+    @Deprecated
+    public static void setSessionTrackingApiClient(@NonNull SessionTrackingApiClient apiClient) {
+        getClient().setSessionTrackingApiClient(apiClient);
+    }
+
 
     /**
      * Add a "before notify" callback, to execute code before every
@@ -309,6 +347,28 @@ public final class Bugsnag {
      */
     public static void beforeNotify(final BeforeNotify beforeNotify) {
         getClient().beforeNotify(beforeNotify);
+    }
+
+    /**
+     * Add a "before breadcrumb" callback, to execute code before every
+     * breadcrumb captured by Bugsnag.
+     * <p>
+     * You can use this to modify breadcrumbs before they are stored by Bugsnag.
+     * You can also return <code>false</code> from any callback to ignore a breadcrumb.
+     * <p>
+     * For example:
+     * <p>
+     * Bugsnag.beforeRecordBreadcrumb(new BeforeRecordBreadcrumb() {
+     * public boolean shouldRecord(Breadcrumb breadcrumb) {
+     * return false; // ignore the breadcrumb
+     * }
+     * })
+     *
+     * @param beforeRecordBreadcrumb a callback to run before a breadcrumb is captured
+     * @see BeforeRecordBreadcrumb
+     */
+    public static void beforeRecordBreadcrumb(final BeforeRecordBreadcrumb beforeRecordBreadcrumb) {
+        getClient().beforeRecordBreadcrumb(beforeRecordBreadcrumb);
     }
 
     /**
@@ -340,7 +400,10 @@ public final class Bugsnag {
      * @param callback   callback invoked on the generated error report for
      *                   additional modification
      */
-    public static void notify(@NonNull String name, @NonNull String message, @NonNull StackTraceElement[] stacktrace, Callback callback) {
+    public static void notify(@NonNull String name,
+                              @NonNull String message,
+                              @NonNull StackTraceElement[] stacktrace,
+                              Callback callback) {
         getClient().notify(name, message, stacktrace, callback);
     }
 
@@ -360,9 +423,9 @@ public final class Bugsnag {
      *
      * @param exception the exception to send to Bugsnag
      * @param metaData  additional information to send with the exception
-     * @deprecated Use {@link #notify(Throwable, Callback)}
-     * to send and modify error reports
+     * @deprecated Use {@link #notify(Throwable, Callback)} to send and modify error reports
      */
+    @Deprecated
     public static void notify(@NonNull final Throwable exception,
                               @NonNull final MetaData metaData) {
         getClient().notify(exception, new Callback() {
@@ -380,8 +443,7 @@ public final class Bugsnag {
      * @param severity  the severity of the error, one of Severity.ERROR,
      *                  Severity.WARNING or Severity.INFO
      * @param metaData  additional information to send with the exception
-     * @deprecated Use {@link #notify(Throwable, Callback)}
-     * to send and modify error reports
+     * @deprecated Use {@link #notify(Throwable, Callback)} to send and modify error reports
      */
     @Deprecated
     public static void notify(@NonNull final Throwable exception, final Severity severity,
@@ -436,6 +498,8 @@ public final class Bugsnag {
      * to send and modify error reports
      */
     @Deprecated
+    @SuppressWarnings("checkstyle:JavadocTagContinuationIndentation")
+
     public static void notify(@NonNull String name, @NonNull String message, String context,
                               @NonNull StackTraceElement[] stacktrace, Severity severity,
                               @NonNull MetaData metaData) {
@@ -525,7 +589,9 @@ public final class Bugsnag {
      * @param type     A category for the breadcrumb
      * @param metadata Additional diagnostic information about the app environment
      */
-    public static void leaveBreadcrumb(@NonNull String name, @NonNull BreadcrumbType type, @NonNull Map<String, String> metadata) {
+    public static void leaveBreadcrumb(@NonNull String name,
+                                       @NonNull BreadcrumbType type,
+                                       @NonNull Map<String, String> metadata) {
         getClient().leaveBreadcrumb(name, type, metadata);
     }
 
@@ -576,12 +642,24 @@ public final class Bugsnag {
     }
 
     /**
+     * Manually starts tracking a new session.
+     *
+     * Automatic session tracking can be enabled via
+     * {@link Configuration#setAutoCaptureSessions(boolean)}, which will automatically create a new
+     * session everytime the app enters the foreground.
+     */
+    public static void startSession() {
+        getClient().startSession();
+    }
+
+    /**
      * Get the current Bugsnag Client instance.
      */
     @NonNull
     public static Client getClient() {
         if (client == null) {
-            throw new IllegalStateException("You must call Bugsnag.init before any other Bugsnag methods");
+            throw new IllegalStateException("You must call Bugsnag.init before any"
+                + " other Bugsnag methods");
         }
 
         return client;

@@ -1,108 +1,126 @@
 package com.bugsnag.android;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
-import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Information about the running Android app which doesn't change over time,
- * including app name, version and release stage.
- * <p/>
- * App information in this class is cached during construction for faster
- * subsequent lookups and to reduce GC overhead.
+ * Collects various data on the application state
  */
-class AppData implements JsonStream.Streamable {
+class AppData {
+
+    private static final long startTimeMs = SystemClock.elapsedRealtime();
 
     static final String RELEASE_STAGE_DEVELOPMENT = "development";
     static final String RELEASE_STAGE_PRODUCTION = "production";
 
-    @NonNull
-    private final Configuration config;
+    private final Client client;
+    private final Context appContext;
 
-    @NonNull
-    protected final String packageName;
-    @Nullable
-    protected final String appName;
-    @Nullable
-    protected final Integer versionCode;
-    @Nullable
-    protected final String versionName;
-    @NonNull
-    protected final String guessedReleaseStage;
-
-    AppData(@NonNull Context appContext, @NonNull Configuration config) {
-        this.config = config;
-
-        packageName = getPackageName(appContext);
-        appName = getAppName(appContext);
-        versionCode = getVersionCode(appContext);
-        versionName = getVersionName(appContext);
-        guessedReleaseStage = guessReleaseStage(appContext);
-    }
-
-    @Override
-    public void toStream(@NonNull JsonStream writer) throws IOException {
-        writer.beginObject();
-
-        writer.name("id").value(packageName);
-        writer.name("name").value(appName);
-        writer.name("packageName").value(packageName);
-        writer.name("versionName").value(versionName);
-        writer.name("versionCode").value(versionCode);
-        writer.name("buildUUID").value(config.getBuildUUID());
-
-        // Prefer user-configured appVersion + releaseStage
-        writer.name("version").value(getAppVersion());
-        writer.name("releaseStage").value(getReleaseStage());
-
-        writer.endObject();
-    }
-
-    @NonNull
-    public String getReleaseStage() {
-        if (config.getReleaseStage() != null) {
-            return config.getReleaseStage();
-        } else {
-            return guessedReleaseStage;
-        }
-    }
+    private final String packageName;
 
     @Nullable
-    public String getAppVersion() {
-        if (config.getAppVersion() != null) {
-            return config.getAppVersion();
-        } else {
-            return versionName;
-        }
-    }
+    final String appName;
 
-    /**
-     * The package name of the running Android app, eg: com.example.myapp
-     */
-    @NonNull
-    private static String getPackageName(@NonNull Context appContext) {
-        return appContext.getPackageName();
-    }
-
-    /**
-     * The name of the running Android app, from android:label in
-     * AndroidManifest.xml
-     */
     @Nullable
-    private static String getAppName(@NonNull Context appContext) {
+    private PackageInfo packageInfo;
+
+    @Nullable
+    private ApplicationInfo applicationInfo;
+
+    @Nullable
+    private PackageManager packageManager;
+
+    AppData(Client client) {
+        this.client = client;
+        this.appContext = client.appContext;
+
+        // cache values which are widely used, expensive to lookup, or unlikely to change
+        packageName = appContext.getPackageName();
+
         try {
-            PackageManager packageManager = appContext.getPackageManager();
-            ApplicationInfo appInfo = packageManager.getApplicationInfo(appContext.getPackageName(), 0);
-
-            return (String) packageManager.getApplicationLabel(appInfo);
-        } catch (PackageManager.NameNotFoundException e) {
-            Logger.warn("Could not get app name");
+            packageManager = appContext.getPackageManager();
+            packageInfo = packageManager.getPackageInfo(packageName, 0);
+            applicationInfo = packageManager.getApplicationInfo(packageName, 0);
+        } catch (PackageManager.NameNotFoundException exception) {
+            Logger.warn("Could not retrieve package/application information for " + packageName);
         }
-        return null;
+
+        appName = getAppName();
+    }
+
+    Map<String, Object> getAppDataSummary() {
+        Map<String, Object> map = new HashMap<>();
+        Configuration config = client.config;
+        map.put("type", calculateNotifierType(config));
+        map.put("releaseStage", guessReleaseStage());
+        map.put("version", calculateVersionName());
+        map.put("versionCode", calculateVersionCode());
+        map.put("codeBundleId", config.getCodeBundleId());
+        return map;
+    }
+
+    Map<String, Object> getAppData() {
+        Map<String, Object> map = getAppDataSummary();
+        map.put("id", packageName);
+        map.put("buildUUID", client.config.getBuildUUID());
+        map.put("duration", getDurationMs());
+        map.put("durationInForeground", calculateDurationInForeground());
+        map.put("inForeground", client.sessionTracker.isInForeground());
+        map.put("packageName", packageName);
+        return map;
+    }
+
+    Map<String, Object> getAppDataMetaData() {
+        Map<String, Object> map = new HashMap<>();
+        map.put("name", appName);
+        map.put("packageName", packageName);
+        map.put("versionName", calculateVersionName());
+        map.put("activeScreen", getActiveScreenClass());
+        map.put("memoryUsage", getMemoryUsage());
+        map.put("lowMemory", isLowMemory());
+        return map;
+    }
+
+    /**
+     * Get the time in milliseconds since Bugsnag was initialized, which is a
+     * good approximation for how long the app has been running.
+     */
+    static long getDurationMs() {
+        return SystemClock.elapsedRealtime() - startTimeMs;
+    }
+
+    /**
+     * Calculates the duration the app has been in the foreground
+     *
+     * @return the duration in ms
+     */
+    private long calculateDurationInForeground() {
+        long nowMs = System.currentTimeMillis();
+        return client.sessionTracker.getDurationInForegroundMs(nowMs);
+    }
+
+    private String getActiveScreenClass() {
+        return client.sessionTracker.getContextActivity();
+    }
+
+    @NonNull
+    private String calculateNotifierType(Configuration config) {
+        String notifierType = config.getNotifierType();
+
+        if (notifierType != null) {
+            return notifierType;
+        } else {
+            return "android";
+        }
     }
 
     /**
@@ -110,13 +128,12 @@ class AppData implements JsonStream.Streamable {
      * in AndroidManifest.xml
      */
     @Nullable
-    private static Integer getVersionCode(@NonNull Context appContext) {
-        try {
-            return appContext.getPackageManager().getPackageInfo(appContext.getPackageName(), 0).versionCode;
-        } catch (PackageManager.NameNotFoundException e) {
-            Logger.warn("Could not get versionCode");
+    private Integer calculateVersionCode() {
+        if (packageInfo != null) {
+            return packageInfo.versionCode;
+        } else {
+            return null;
         }
-        return null;
     }
 
     /**
@@ -124,29 +141,78 @@ class AppData implements JsonStream.Streamable {
      * in AndroidManifest.xml
      */
     @Nullable
-    private static String getVersionName(@NonNull Context appContext) {
-        try {
-            return appContext.getPackageManager().getPackageInfo(appContext.getPackageName(), 0).versionName;
-        } catch (PackageManager.NameNotFoundException e) {
-            Logger.warn("Could not get versionName");
+    private String calculateVersionName() {
+        String configAppVersion = client.config.getAppVersion();
+
+        if (configAppVersion != null) {
+            return configAppVersion;
+        } else if (packageInfo != null) {
+            return packageInfo.versionName;
+        } else {
+            return null;
         }
-        return null;
     }
 
     /**
      * Guess the release stage of the running Android app by checking the
-     * android:debuggable flag from AndroidManifest.xml
+     * android:debuggable flag from AndroidManifest.xml. If the release stage was set in
+     * {@link Configuration}, this value will be returned instead.
      */
     @NonNull
-    static String guessReleaseStage(@NonNull Context appContext) {
-        try {
-            int appFlags = appContext.getPackageManager().getApplicationInfo(appContext.getPackageName(), 0).flags;
-            if ((appFlags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+    String guessReleaseStage() {
+        String configStage = client.config.getReleaseStage();
+
+        if (configStage != null) {
+            return configStage;
+        }
+        if (applicationInfo != null) {
+            if ((applicationInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                 return RELEASE_STAGE_DEVELOPMENT;
             }
-        } catch (PackageManager.NameNotFoundException e) {
-            Logger.warn("Could not get releaseStage");
         }
         return RELEASE_STAGE_PRODUCTION;
     }
+
+    /**
+     * The name of the running Android app, from android:label in
+     * AndroidManifest.xml
+     */
+    @Nullable
+    private String getAppName() {
+        if (packageManager != null && applicationInfo != null) {
+            return packageManager.getApplicationLabel(applicationInfo).toString();
+        } else {
+            return null;
+        }
+    }
+
+    /**
+     * Get the actual memory used by the VM (which may not be the total used
+     * by the app in the case of NDK usage).
+     */
+    private long getMemoryUsage() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+
+    /**
+     * Check if the device is currently running low on memory.
+     */
+    @Nullable
+    private Boolean isLowMemory() {
+        try {
+            ActivityManager activityManager =
+                (ActivityManager) appContext.getSystemService(Context.ACTIVITY_SERVICE);
+
+            if (activityManager != null) {
+                ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+                activityManager.getMemoryInfo(memInfo);
+                return memInfo.lowMemory;
+            }
+        } catch (Exception exception) {
+            Logger.warn("Could not check lowMemory status");
+        }
+        return null;
+    }
+
 }

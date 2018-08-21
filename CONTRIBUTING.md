@@ -7,6 +7,38 @@ Contributing
 -   [Make a pull request](https://help.github.com/articles/using-pull-requests)
 -   Thanks!
 
+## Reporting issues
+
+Are you having trouble getting started? Please [contact us directly](mailto:support@bugsnag.com?subject=%5BGitHub%5D%20Android%20SDK%20-%20having%20trouble%20getting%20started%20with%20Bugsnag) for assistance with integrating Bugsnag into your application.
+If you have spotted a problem with this module, feel free to open a [new issue](https://github.com/bugsnag/bugsnag-android/issues/new). Here are a few things to check before doing so:
+
+* Are you using the latest version of `bugsnag-android`? If not, does updating to the latest version fix your issue?
+* Has somebody else [already reported](https://github.com/bugsnag/bugsnag-android/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen) your issue? Feel free to add additional context to or check-in on an existing issue that matches your own.
+* Is your issue caused by this module? Only things related to the `bugsnag-android` module should be reported here. For anything else, please [contact us directly](mailto:support@bugsnag.com) and we'd be happy to help you out.
+
+### Fixing issues
+
+If you've identified a fix to a new or existing issue, we welcome contributions!
+Here are some helpful suggestions on contributing that help us merge your PR quickly and smoothly:
+
+* [Fork](https://help.github.com/articles/fork-a-repo) the
+  [library on GitHub](https://github.com/bugsnag/bugsnag-android)
+* Build and test your changes using the example app and test suite
+* Commit and push until you are happy with your contribution
+* [Make a pull request](https://help.github.com/articles/using-pull-requests)
+* Ensure the automated checks pass (and if it fails, please try to address the cause)
+
+### Adding features
+
+Unfortunately we’re unable to accept PRs that add features or refactor the library at this time.
+However, we’re very eager and welcome to hearing feedback about the library so please contact us directly to discuss your idea, or open a
+[feature request](https://github.com/bugsnag/bugsnag-android/issues/new?template=Feature_request.md) to help us improve the library.
+
+Here’s a bit about our process designing and building the Bugsnag libraries:
+
+* We have an internal roadmap to plan out the features we build, and sometimes we will already be planning your suggested feature!
+* Our open source libraries span many languages and frameworks so we strive to ensure they are idiomatic on the given platform, but also consistent in terminology between platforms. That way the core concepts are familiar whether you adopt Bugsnag for one platform or many.
+* Finally, one of our goals is to ensure our libraries work reliably, even in crashy, multi-threaded environments. Oftentimes, this requires an intensive engineering design and code review process that adheres to our style and linting guidelines.
 
 Installing the Android SDK
 --------------------------
@@ -46,10 +78,10 @@ Running Tests
 
 Running the test suite requires a connected android device or emulator.
 
-You can run the test suite on a device/emulator as follows:
+You can run the test suite on a device/emulator as follows from within the sdk directory:
 
 ```shell
-./gradlew clean :connectedCheck
+./gradlew connectedCheck
 ```
 
 Running Lint
@@ -76,32 +108,15 @@ device/emulator.
 Releasing a New Version
 -----------------------
 
-## Release Checklist
-Please follow the testing instructions in [the platforms release checklist](https://github.com/bugsnag/platforms-release-checklist/blob/master/README.md), and any additional steps directly below.
-
-### Instructions
-
 If you are a project maintainer, you can build and release a new version of
 `bugsnag-android` as follows:
 
-### 1. Ensure you have permission to make a release
-
-This process is a little ridiculous...
+## One-time setup
 
 -   Create a [Sonatype JIRA](https://issues.sonatype.org) account
 -   Ask in the [Bugsnag Sonatype JIRA ticket](https://issues.sonatype.org/browse/OSSRH-5533) to become a contributor
 -   Ask an existing contributor (likely Simon) to confirm in the ticket
 -   Wait for Sonatype them to confirm the approval
-
-
-### 2. Prepare for release
-
--   Test unhandled and handled exception reporting via the example application,
-    ensuring both kinds of reports are sent.
--   Update the `CHANGELOG` and `README.md` with any new features
-
-### 3. Release to Maven Central
-
 -   Create a file `~/.gradle/gradle.properties` with the following contents:
 
     ```ini
@@ -116,36 +131,47 @@ This process is a little ridiculous...
     signing.secretKeyRingFile=/Users/{username}/.gnupg/secring.gpg
     ```
 
--   Build and upload the new version
+## Every time
 
--   Update the version number, tag a release, and upload an archive by running `make VERSION=[number] release`
+### Pre-release Checklist
 
--   "Promote" the release build on Maven Central
+- [ ] Does the build pass on the CI server?
+- [ ] Are all Docs PRs ready to go?
+- [ ] Do the installation instructions work when creating an example app from scratch?
+- [ ] Has all new functionality been manually tested on a release build?
+  - [ ] Ensure the example app sends an unhandled error
+  - [ ] Ensure the example app sends a handled error
+  - [ ] If a response is not received from the server, is the report queued for later?
+  - [ ] If no network connection is available, is the report queued for later?
+  - [ ] On a throttled network, is the request timeout reasonable, and the main thread not blocked by any visible UI freeze? (Throttling can be achieved by setting both endpoints to "https://httpstat.us/200?sleep=5000")
+  - [ ] Are queued reports sent asynchronously?
+- [ ] Have the installation instructions been updated on the [dashboard](https://github.com/bugsnag/bugsnag-website/tree/master/app/views/dashboard/projects/install) as well as the [docs site](https://github.com/bugsnag/docs.bugsnag.com)?
 
-    -   Go to the [sonatype open source dashboard](https://oss.sonatype.org/index.html#stagingRepositories)
-    -   Click the search box at the top right, and type “com.bugsnag”
-    -   Select the com.bugsnag staging repository
-    -   Click the “close” button in the toolbar, no message
-    -   Click the “refresh” button
-    -   Select the com.bugsnag closed repository
-    -   Click the “release” button in the toolbar
+### Making the release
 
-### 4. Upload the .aar file to GitHub
+- [ ] Update the version number and dex count badge by running `make VERSION=[number] bump`
+- [ ] Inspected the updated CHANGELOG, README, and version files to ensure they are correct
+- [ ] Release to GitHub, Maven Central, and Bintray by running `make VERSION=[number] release`
+  - [ ] "Promote" the release build on Maven Central
+    - Go to the [sonatype open source dashboard](https://oss.sonatype.org/index.html#stagingRepositories)
+    - Click the search box at the top right, and type “com.bugsnag”
+    - Select the com.bugsnag staging repository
+    - Click the “close” button in the toolbar, no message
+    - Click the “refresh” button
+    - Select the com.bugsnag closed repository
+    - Click the “release” button in the toolbar
+  - [ ] Create a release from your new tag on [GitHub Releases](https://github.com/bugsnag/bugsnag-android/releases)
+    - Add the contents of the latest changelog entry to the new release
+    - Upload the generated `.aar` file from `build/outputs/aar/bugsnag-android-release.aar`
+  - [ ] Open the [Bintray repository](https://bintray.com/bugsnag/maven/bugsnag-android) and publish the new artifacts
+- [ ] Merge outstanding docs PRs related to this release
 
--   Create a "release" from your new tag on [GitHub Releases](https://github.com/bugsnag/bugsnag-android/releases)
--   Upload the generated `.aar` file from `build/outputs/aar/bugsnag-android-release.aar` on the "edit tag" page for this release tag
 
-### 5. Update documentation
+### Post-release Checklist
 
--    Update installation instructions in the quickstart
-     guides on the website with any new content (in `_android.slim`)
--    Bump the version number in the installation instructions on
-     docs.bugsnag.com/platforms/android, and add any new content
+_(May take some time to propagate to maven central and bintray)_
 
-### 6. Keep dependent libraries in sync
-
--    Make releases to downstream libraries, if appropriate (generally for bug
-     fixes)
-     
-### 7. Update Method Count Badge
--   Update the version number specified in the URL for the method count badge in the README. 
+- [ ] Have all Docs PRs been merged?
+- [ ] Can a freshly created example app send an error report from a release build using the released artefact?
+- [ ] Do the existing example apps send an error report using the released artifact?
+- [ ] Make releases to downstream libraries, if appropriate (generally for bug fixes)

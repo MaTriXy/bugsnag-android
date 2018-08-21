@@ -1,11 +1,16 @@
 package com.bugsnag.android;
 
+import android.annotation.SuppressLint;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
+import com.facebook.infer.annotation.ThreadSafe;
+
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
+@ThreadSafe
 class StrictModeHandler {
 
     // Byte 1: Thread-policy (needs to be synced with StrictMode constants)
@@ -25,8 +30,9 @@ class StrictModeHandler {
     private static final int DETECT_VM_CLEARTEXT_NETWORK = 0x40 << 8;
 
 
-    private static final String STRICT_MODE_CLZ_NAME = "android.os.StrictMode";
+    private static final String STRICT_MODE_CLZ_NAME = "android.os.strictmode";
 
+    @SuppressLint("UseSparseArrays")
     private static final Map<Integer, String> POLICY_CODE_MAP = new HashMap<>();
 
     static {
@@ -48,14 +54,14 @@ class StrictModeHandler {
     /**
      * Checks whether a throwable was originally thrown from the StrictMode class
      *
-     * @param e the throwable
+     * @param throwable the throwable
      * @return true if the throwable's root cause is a StrictMode policy violation
      */
-    boolean isStrictModeThrowable(Throwable e) {
-        Throwable cause = getRootCause(e);
+    boolean isStrictModeThrowable(Throwable throwable) {
+        Throwable cause = getRootCause(throwable);
         Class<? extends Throwable> causeClass = cause.getClass();
         String simpleName = causeClass.getName();
-        return simpleName.startsWith(STRICT_MODE_CLZ_NAME);
+        return simpleName.toLowerCase(Locale.US).startsWith(STRICT_MODE_CLZ_NAME);
     }
 
     @Nullable
@@ -63,10 +69,10 @@ class StrictModeHandler {
         if (TextUtils.isEmpty(exceptionMessage)) {
             throw new IllegalArgumentException();
         }
-        int i = exceptionMessage.lastIndexOf("violation=");
+        int indexOf = exceptionMessage.lastIndexOf("violation=");
 
-        if (i != -1) {
-            String substring = exceptionMessage.substring(i);
+        if (indexOf != -1) {
+            String substring = exceptionMessage.substring(indexOf);
             substring = substring.replace("violation=", "");
 
             if (TextUtils.isDigitsOnly(substring)) {
@@ -80,14 +86,14 @@ class StrictModeHandler {
     /**
      * Recurse the stack to get the original cause of the throwable
      *
-     * @param t the throwable
+     * @param throwable the throwable
      * @return the root cause of the throwable
      */
-    private Throwable getRootCause(Throwable t) {
-        Throwable cause = t.getCause();
+    private Throwable getRootCause(Throwable throwable) {
+        Throwable cause = throwable.getCause();
 
         if (cause == null) {
-            return t;
+            return throwable;
         } else {
             return getRootCause(cause);
         }

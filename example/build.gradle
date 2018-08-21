@@ -1,12 +1,11 @@
 buildscript {
     repositories {
-        jcenter()
         google()
+        jcenter()
         mavenLocal()
     }
     dependencies {
         classpath 'com.bugsnag:bugsnag-android-gradle-plugin:3.1.0'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 
@@ -14,28 +13,28 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 repositories {
-    jcenter()
     google()
+    jcenter()
 }
 
 android {
 
     compileSdkVersion Integer.parseInt(project.ANDROID_COMPILE_SDK_VERSION)
-    buildToolsVersion project.ANDROID_BUILD_TOOLS_VERSION
 
     defaultConfig {
         minSdkVersion Integer.parseInt(project.ANDROID_MIN_SDK_VERSION)
         targetSdkVersion Integer.parseInt(project.ANDROID_TARGET_SDK_VERSION)
 
         manifestPlaceholders = [
-            bugsnagApiKey                    : "572dd1154e6c5b291e5d1b42e506ae34",
+            bugsnagApiKey                    : "your-api-key",
             bugsnagBuildUUID                 : "abc123",
             bugsnagAppVersion                : "1.0.0",
             bugsnagEndpoint                  : "https://notify.bugsnag.com",
+            bugsnagSessionsEndpoint          : "https://sessions.bugsnag.com",
             bugsnagReleaseStage              : "debug",
             bugsnagSendThreads               : true,
             bugsnagEnableExceptionHandler    : true,
-            bugsnagPersistUserBetweenSessions: false,
+            bugsnagPersistUserBetweenSessions: false
         ]
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
@@ -71,9 +70,6 @@ android {
         }
     }
 
-
-    flavorDimensions "regular"
-
     productFlavors {
         javaExample {
             applicationIdSuffix ".java"
@@ -106,3 +102,15 @@ dependencies {
 }
 
 apply plugin: 'com.bugsnag.android.gradle'
+
+apply plugin: 'checkstyle'
+
+checkstyle {
+    toolVersion = "6.16"
+}
+task("checkstyle", type: Checkstyle) {
+    configFile rootProject.file("config/checkstyle/checkstyle.xml")
+    source "src/javaExample/java"
+    include "**/*.java"
+    classpath = files()
+}
