@@ -1,0 +1,3 @@
+-keepattributes LineNumberTable,SourceFile
+-keepnames class com.facebook.react.common.JavascriptException { *; }
+-keep class com.bugsnag.android.BugsnagReactNativePlugin { *; }

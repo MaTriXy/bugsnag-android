@@ -1,0 +1,44 @@
+allprojects {
+    repositories {
+        mavenLocal()
+        google()
+
+        // ignore already published artefacts in favour of mavenLocal artefact
+        mavenCentral() {
+            content {
+                excludeModule("com.bugsnag", "bugsnag-android")
+            }
+        }
+    }
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://plugins.gradle.org/m2/" }
+    }
+    ext.kotlin_version = "1.8.20"
+
+    dependencies {
+        def agpVersion = project.hasProperty("USE_AGP_VERSION")
+                ? project.property("USE_AGP_VERSION")
+                : "8.6.1"
+
+        project.logger.lifecycle("Using AGP $agpVersion")
+        classpath "com.android.tools.build:gradle:$agpVersion"
+        classpath "com.bugsnag:bugsnag-android-gradle-plugin:8.1.0"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.23.5"
+        classpath "org.jlleitschuh.gradle:ktlint-gradle:11.3.1"
+    }
+}
+
+if (project.hasProperty("TEST_FIXTURE_NDK_VERSION")) {
+    def version = project.property("TEST_FIXTURE_NDK_VERSION")
+    project.logger.lifecycle("Building test fixture with custom NDK version '$version'")
+    ext.ndkVersion = version
+} else {
+    project.logger.lifecycle("Building test fixture with default NDK version")
+    ext.ndkVersion = "17.2.4988734"
+}

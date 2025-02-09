@@ -1,0 +1,101 @@
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "io.gitlab.arturbosch.detekt"
+apply plugin: "org.jlleitschuh.gradle.ktlint"
+
+android {
+    compileSdk 35
+    ndkVersion parent.ext.ndkVersion
+
+    defaultConfig {
+        minSdkVersion 17
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.1.14"
+        manifestPlaceholders = [
+                // omit any of the following placeholders to use the default values
+                bugsnagApiKey: "abc12312312312312312312312312312",
+                bugsnagPerformanceApiKey: System.getenv("BUGSNAG_PERFORMANCE_API_KEY")
+                        ?: "abc12312312312312312312312312312",
+                bugsnagAppType: "test",
+                bugsnagAppVersion: "7.5.3",
+                bugsnagAutoDetectErrors: true,
+                bugsnagAutoTrackSessions: false,
+                bugsnagBuildUuid: "test-7.5.3",
+                bugsnagDiscardClasses: "com.domain.ClassName,com.domain.SecondClassName",
+                bugsnagEnabledReleaseStages: "production,development,testing",
+                bugsnagEndpoint: "manifest-notify-endpoint",
+                bugsnagEndpointSessions: "manifest-sessions-endpoint",
+                bugsnagLaunchCrashThresholdMs: 10000,
+                bugsnagMaxBreadcrumbs: 1,
+                bugsnagPersistUser: false,
+                bugsnagProjectPackages: "java.net.UnknownHostException,com.example.Custom",
+                bugsnagRedactedKeys: "filter_me",
+                bugsnagReleaseStage: "testing",
+                bugsnagSendThreads: "always",
+                bugsnagVersionCode: 753,
+        ]
+    }
+    signingConfigs {
+        release {
+            keyAlias "password"
+            keyPassword "password"
+            storeFile file("../../fakekeys.jks")
+            storePassword "password"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled true // obfuscation disabled to simplify maze
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.release
+        }
+    }
+
+    // adding custom jniLibs results in dupe SO files, ignore build error by
+    // picking SO file. see https://developer.android.com/studio/releases/gradle-plugin#cmake-imported-targets
+    packagingOptions {
+        pickFirst "**/*.so"
+        jniLibs.useLegacyPackaging = null
+    }
+    lintOptions {
+        abortOnError false
+    }
+
+    // conditionally alter the filename depending on the fixture
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            if (project.hasProperty("TEST_FIXTURE_NAME")) {
+                outputFileName = project.property("TEST_FIXTURE_NAME")
+            } else {
+                outputFileName = "fixture.apk"
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+    namespace 'com.bugsnag.android.mazerunner'
+}
+
+dependencies {
+    implementation project(":jvm-scenarios")
+    implementation project(":cxx-scenarios")
+
+    if (project.hasProperty("MINIMAL_FIXTURE") && "true" == project.property("MINIMAL_FIXTURE")) {
+        // don't include NDK scenarios that require linking against bugsnag-plugin-android-ndk
+    } else {
+        implementation project(":cxx-scenarios-bugsnag")
+    }
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "androidx.annotation:annotation:1.2.0"
+    implementation "com.bugsnag:bugsnag-android-performance:1.2.2"
+}
+
+apply from: "../bugsnag-dependency.gradle"
+apply from: "../../../../gradle/detekt.gradle"
+apply from: "../gradle/checkstyle.gradle"

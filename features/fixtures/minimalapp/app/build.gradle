@@ -1,0 +1,52 @@
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "kotlin-android-extensions"
+
+repositories {
+    mavenLocal()
+    google()
+    mavenCentral()
+}
+
+android {
+    compileSdkVersion 31
+
+    defaultConfig {
+        applicationId "com.bugsnag.android.minimalapp"
+        minSdkVersion 14
+        targetSdkVersion 31
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled project.hasProperty("minified")
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+    packagingOptions {
+        pickFirst "**/*.so"
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+}
+
+if (project.hasProperty("withBugsnag")) {
+    project.logger.info("Building with Bugsnag")
+
+    dependencies {
+        implementation "com.bugsnag:bugsnag-android:+"
+    }
+
+    apply plugin: "com.bugsnag.android.gradle"
+
+    bugsnag {
+        uploadNdkMappings = false
+        uploadJvmMappings = false
+        reportBuilds = false
+    }
+} else {
+    project.logger.info("Building without Bugsnag")
+}
